@@ -1,0 +1,1774 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #1a1a2e;
+    color: #fff;
+    font-family: 'Microsoft JhengHei', sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+}
+#game-container {
+    position: relative;
+    width: 420px;
+    max-width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    background: #0a0a14;
+    overflow: hidden;
+}
+
+/* === 登入畫面 === */
+#login-screen {
+    position: absolute; inset: 0; z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-end;
+    background: #000;
+    cursor: pointer;
+}
+#login-screen img {
+    width: 100%; height: 100%;
+    object-fit: cover; position: absolute;
+    top: 0; left: 0;
+}
+.login-version {
+    position: absolute; top: 12px; right: 14px;
+    z-index: 101;
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 1px;
+}
+.login-bottom {
+    position: relative; z-index: 101;
+    width: 100%;
+    background: linear-gradient(0deg, rgba(0,0,0,0.95) 40%, rgba(0,0,0,0.6) 70%, transparent);
+    padding: 50px 0 28px;
+    display: flex; flex-direction: column;
+    align-items: center;
+}
+.login-game-title {
+    font-family: 'Cinzel Decorative', serif;
+    font-size: 28px;
+    color: transparent;
+    letter-spacing: 3px;
+    margin-bottom: 20px;
+    font-weight: 700;
+    background: linear-gradient(180deg, #ffd700 0%, #f0c040 30%, #b8860b 60%, #ffd700 100%);
+    background-size: 100% 200%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: titleShine 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 8px rgba(255,215,0,0.5)) drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+    position: relative;
+}
+.login-tap-area {
+    display: flex; align-items: center;
+    gap: 12px; width: 75%;
+    margin-bottom: 24px;
+}
+.login-line {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,215,0,0.25), transparent);
+}
+.login-tap-text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 5px;
+    white-space: nowrap;
+    animation: tapFade 2.5s ease-in-out infinite;
+}
+.login-credit {
+    font-size: 9px;
+    color: rgba(255,255,255,0.25);
+    letter-spacing: 1px;
+}
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+@keyframes tapFade {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.15; }
+}
+@keyframes titleShine {
+    0%, 100% { background-position: 0% 0%; }
+    50% { background-position: 0% 100%; }
+}
+
+/* === 戰鬥畫面 === */
+#battle-screen {
+    display: none; position: absolute; inset: 0;
+    flex-direction: column;
+    background: #0a0a14;
+}
+.battle-bg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    z-index: 0;
+    opacity: 0.35;
+    pointer-events: none;
+}
+#enemy-area {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column;
+    align-items: center;
+    padding: 4px 12px 6px;
+    flex: 1; min-height: 0;
+}
+#enemy-showcase {
+    position: relative;
+    width: 100%; flex: 1; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+}
+#enemy-aura {
+    position: absolute;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--enemy-color, rgba(255,100,100,0.15)) 0%, transparent 70%);
+    animation: auraBreath 3s ease-in-out infinite;
+    pointer-events: none;
+    filter: blur(10px);
+}
+@keyframes auraBreath {
+    0%, 100% { transform: scale(0.9); opacity: 0.5; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+}
+#enemy-platform {
+    position: absolute; bottom: 0;
+    width: 130px; height: 16px;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0.5) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+}
+#enemy-shadow {
+    position: absolute; bottom: 2px;
+    width: 90px; height: 10px;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0.6) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    animation: shadowBreath 3s ease-in-out infinite;
+}
+@keyframes shadowBreath {
+    0%, 100% { transform: scaleX(1); opacity: 0.6; }
+    50% { transform: scaleX(1.15); opacity: 0.4; }
+}
+#enemy-sprite {
+    width: 200px; height: 200px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; z-index: 1;
+    filter: drop-shadow(0 6px 20px rgba(0,0,0,0.8));
+    transition: transform 0.15s;
+    animation: enemyIdle 4s ease-in-out infinite;
+}
+@keyframes enemyIdle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+.enemy-img {
+    width: 100%; height: 100%;
+    object-fit: contain;
+}
+#enemy-sprite.attack { animation: enemyAttackAnim 0.4s ease-out forwards; }
+#enemy-sprite.hit { animation: enemyHitAnim 0.3s ease-out forwards; }
+@keyframes enemyAttackAnim {
+    0% { transform: scale(1) translateY(0); filter: brightness(1); }
+    20% { transform: scale(1.15) translateY(-5px); filter: brightness(1.3); }
+    50% { transform: scale(1.4) translateY(12px); filter: brightness(1.8) drop-shadow(0 0 20px rgba(255,0,0,0.6)); }
+    70% { transform: scale(1.1) translateY(4px); }
+    100% { transform: scale(1) translateY(0); filter: brightness(1); }
+}
+@keyframes enemyHitAnim {
+    0% { transform: scale(1) translateX(0); filter: brightness(1); }
+    15% { transform: scale(0.85) translateX(8px); filter: brightness(4) saturate(0); }
+    30% { transform: scale(0.9) translateX(-6px); filter: brightness(2.5) saturate(0.3); }
+    50% { transform: scale(0.95) translateX(4px); filter: brightness(1.8) saturate(0.6); }
+    100% { transform: scale(1) translateX(0); filter: brightness(1) saturate(1); }
+}
+#enemy-name {
+    font-size: 14px; font-weight: bold; color: #eee;
+    letter-spacing: 2px; margin-bottom: 4px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+#enemy-hp-bar, #team-hp-bar {
+    width: 85%; height: 14px;
+    background: rgba(0,0,0,0.7);
+    border-radius: 7px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
+}
+#team-hp-bar { width: 100%; }
+#enemy-hp-fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #e94560, #ff6b81);
+    border-radius: 6px;
+    transition: width 0.4s ease-out;
+    position: relative;
+}
+#enemy-hp-fill::after, #team-hp-fill::after {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 50%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.25), transparent);
+    border-radius: 6px 6px 0 0;
+}
+#enemy-hp-text, #team-hp-text {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: #fff; font-weight: bold;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+}
+/* HP 條受擊/回復閃光 */
+.hp-damage-flash { animation: hpDmgFlash 0.4s ease-out; }
+.hp-heal-flash { animation: hpHealFlash 0.4s ease-out; }
+@keyframes hpDmgFlash {
+    0% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 0 0 rgba(255,0,0,0); }
+    30% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 0 20px rgba(255,0,0,0.6), inset 0 0 10px rgba(255,0,0,0.3); }
+    100% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 0 0 rgba(255,0,0,0); }
+}
+@keyframes hpHealFlash {
+    0% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 0 0 rgba(0,255,0,0); }
+    30% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 0 20px rgba(46,213,115,0.6), inset 0 0 10px rgba(46,213,115,0.3); }
+    100% { box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 0 0 rgba(0,255,0,0); }
+}
+/* 敵人 CD 顯示 */
+#enemy-cd {
+    font-size: 11px; color: #ffd700;
+    margin-top: 4px; letter-spacing: 1px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    transition: all 0.3s;
+}
+.cd-num {
+    font-weight: bold; font-size: 14px;
+    margin-left: 4px;
+}
+.cd-danger {
+    color: #ff4757 !important;
+    animation: cdDanger 0.5s ease-in-out infinite;
+}
+.cd-warning {
+    animation: cdWarningFlash 0.6s ease-out;
+}
+@keyframes cdDanger {
+    0%, 100% { transform: scale(1); text-shadow: 0 0 8px rgba(255,71,87,0.5); }
+    50% { transform: scale(1.05); text-shadow: 0 0 16px rgba(255,71,87,0.8); }
+}
+@keyframes cdWarningFlash {
+    0% { color: #ffd700; }
+    25% { color: #ff4757; transform: scale(1.2); }
+    50% { color: #ffd700; }
+    75% { color: #ff4757; transform: scale(1.1); }
+    100% { color: #ffd700; transform: scale(1); }
+}
+/* 敵人技能公告 */
+.enemy-skill-announce {
+    position: absolute; top: 0; left: 0; right: 0;
+    z-index: 15; pointer-events: none;
+    display: flex; justify-content: center;
+    opacity: 0; transform: translateY(-20px);
+    transition: all 0.3s ease-out;
+}
+.enemy-skill-announce.show {
+    opacity: 1; transform: translateY(0);
+}
+.esk-inner {
+    background: linear-gradient(135deg, rgba(180,30,30,0.95), rgba(120,20,20,0.95));
+    border: 1px solid rgba(255,100,100,0.4);
+    border-radius: 8px;
+    padding: 10px 24px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(255,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+    margin-top: 8px;
+}
+.esk-name {
+    font-size: 16px; font-weight: bold; color: #ffd700;
+    letter-spacing: 3px;
+    text-shadow: 0 0 10px rgba(255,215,0,0.5);
+}
+.esk-desc {
+    font-size: 10px; color: #ffaaaa;
+    margin-top: 3px; letter-spacing: 1px;
+}
+#team-hp-area {
+    position: relative; z-index: 1;
+    padding: 4px 16px;
+}
+#team-hp-fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #2ed573, #7bed9f);
+    border-radius: 6px;
+    transition: width 0.4s ease-out;
+    position: relative;
+}
+/* 增益狀態列 */
+#buff-bar {
+    position: relative; z-index: 1;
+    display: flex; gap: 4px;
+    padding: 0 16px 2px;
+    min-height: 0;
+    flex-wrap: wrap;
+}
+#board-area {
+    position: relative; z-index: 1;
+    display: flex; justify-content: center;
+    padding: 4px 8px;
+}
+#board-canvas {
+    border-radius: 10px;
+    box-shadow: 0 0 24px rgba(0,0,0,0.6), 0 0 60px rgba(100,200,255,0.06), inset 0 0 30px rgba(0,0,0,0.3);
+    border: 1.5px solid rgba(100,200,255,0.12);
+}
+#team-area {
+    position: relative; z-index: 1;
+    display: flex; justify-content: center;
+    gap: 4px;
+    padding: 6px 8px;
+}
+.team-card {
+    width: 52px; height: 52px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.team-card:active { transform: scale(0.9); }
+.team-card img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+}
+.team-card .card-element {
+    position: absolute; bottom: 1px; right: 1px;
+    font-size: 10px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 3px;
+    padding: 1px 3px;
+    line-height: 1;
+}
+/* 技能 CD 覆蓋層 */
+.skill-cd-overlay {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+}
+.skill-cd-overlay.ready {
+    background: transparent;
+}
+.skill-cd-num {
+    font-size: 18px; font-weight: bold; color: #fff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+.skill-ready-icon {
+    font-size: 16px; color: #ffd700;
+    animation: skillReadyPulse 1s ease-in-out infinite;
+    text-shadow: 0 0 8px rgba(255,215,0,0.6);
+}
+@keyframes skillReadyPulse {
+    0%, 100% { opacity: 0.6; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+.team-card.skill-ready {
+    border-color: rgba(255,215,0,0.6);
+    box-shadow: 0 0 12px rgba(255,215,0,0.3), 0 2px 8px rgba(0,0,0,0.4);
+}
+.skill-ready-glow {
+    position: absolute; inset: -3px;
+    border-radius: 10px;
+    border: 1.5px solid rgba(255,215,0,0.4);
+    animation: skillGlowPulse 1.5s ease-in-out infinite;
+    pointer-events: none;
+}
+@keyframes skillGlowPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(255,215,0,0.2); opacity: 0.5; }
+    50% { box-shadow: 0 0 16px rgba(255,215,0,0.5); opacity: 1; }
+}
+/* 技能發動特效 */
+.skill-activation-overlay {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.skill-activation-overlay.show { opacity: 1; }
+.skill-activation-flash {
+    position: absolute; inset: 0;
+    opacity: 0.15;
+}
+.skill-activation-text {
+    text-align: center; z-index: 1;
+    animation: skillTextAppear 0.5s ease-out;
+}
+@keyframes skillTextAppear {
+    from { transform: scale(0.5) translateY(20px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+}
+.skill-char-name {
+    font-size: 12px; color: #ccc;
+    letter-spacing: 2px; margin-bottom: 4px;
+}
+.skill-name-display {
+    font-size: 24px; font-weight: bold; color: #ffd700;
+    letter-spacing: 6px;
+    text-shadow: 0 0 20px rgba(255,215,0,0.6), 0 2px 8px rgba(0,0,0,0.8);
+}
+/* 浮動文字 */
+.floating-text {
+    position: absolute;
+    left: 50%; top: -5px;
+    transform: translateX(-50%);
+    font-size: 18px; font-weight: 900;
+    pointer-events: none;
+    z-index: 15;
+    animation: floatUp 1.2s ease-out forwards;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+    white-space: nowrap;
+    font-family: 'Impact', 'Arial Black', sans-serif;
+    letter-spacing: 1px;
+}
+@keyframes floatUp {
+    0% { opacity: 0; transform: translateX(-50%) translateY(5px) scale(0.5); }
+    15% { opacity: 1; transform: translateX(-50%) translateY(-8px) scale(1.2); }
+    30% { transform: translateX(-50%) translateY(-15px) scale(1); }
+    80% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-45px) scale(0.9); }
+}
+/* 傷害/Combo 顯示 */
+#damage-display {
+    position: absolute;
+    top: 28%; left: 50%;
+    transform: translateX(-50%);
+    font-size: 40px; font-weight: 900;
+    color: #ff4757;
+    text-shadow: 0 0 20px rgba(255,71,87,0.8), 0 0 40px rgba(255,71,87,0.4), 0 2px 6px rgba(0,0,0,0.9), 2px 2px 0 rgba(0,0,0,0.5);
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    font-family: 'Impact', 'Arial Black', sans-serif;
+    letter-spacing: 2px;
+}
+#damage-display.show {
+    animation: dmgPop 0.9s ease-out forwards;
+}
+@keyframes dmgPop {
+    0% { opacity: 0; transform: translateX(-50%) scale(0.2) translateY(10px); filter: blur(4px); }
+    12% { opacity: 1; transform: translateX(-50%) scale(1.6) translateY(-15px); filter: blur(0); }
+    25% { transform: translateX(-50%) scale(0.95) translateY(-18px); }
+    35% { transform: translateX(-50%) scale(1.1) translateY(-20px); }
+    60% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) scale(0.85) translateY(-60px); filter: blur(2px); }
+}
+#combo-display {
+    position: absolute;
+    top: 40%; left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    text-align: center;
+}
+#combo-display.show {
+    animation: comboPop 0.7s ease-out forwards;
+}
+.combo-num {
+    font-size: 48px; font-weight: 900;
+    color: #ffd700;
+    text-shadow: 0 0 24px rgba(255,215,0,0.8), 0 0 48px rgba(255,215,0,0.3), 0 2px 6px rgba(0,0,0,0.9), 2px 2px 0 rgba(0,0,0,0.4);
+    display: block;
+    font-family: 'Impact', 'Arial Black', sans-serif;
+}
+.combo-num.big {
+    font-size: 64px;
+    animation: comboBigPulse 0.4s ease-out;
+}
+@keyframes comboBigPulse {
+    0% { transform: scale(0.2) rotate(-5deg); filter: blur(4px); }
+    50% { transform: scale(1.4) rotate(2deg); filter: blur(0); }
+    75% { transform: scale(0.95) rotate(-1deg); }
+    100% { transform: scale(1) rotate(0deg); }
+}
+.combo-text {
+    font-size: 18px; color: #fff;
+    letter-spacing: 6px;
+    text-shadow: 0 0 12px rgba(255,255,255,0.5), 0 2px 4px rgba(0,0,0,0.8);
+    display: block;
+    font-weight: bold;
+}
+@keyframes comboPop {
+    0% { opacity: 0; transform: translateX(-50%) scale(0.2); }
+    15% { opacity: 1; transform: translateX(-50%) scale(1.3); }
+    30% { transform: translateX(-50%) scale(0.95); }
+    45% { transform: translateX(-50%) scale(1.05); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) scale(0.9) translateY(-15px); }
+}
+.combo-big-show {
+    position: absolute; top: 36%; left: 50%;
+    transform: translateX(-50%);
+    z-index: 10; pointer-events: none;
+    text-align: center;
+    animation: comboBigShow 1.4s ease-out forwards;
+}
+@keyframes comboBigShow {
+    0% { opacity: 0; transform: translateX(-50%) scale(0.1) rotate(-10deg); }
+    10% { opacity: 1; transform: translateX(-50%) scale(1.6) rotate(3deg); }
+    20% { transform: translateX(-50%) scale(0.9) rotate(-1deg); }
+    30% { transform: translateX(-50%) scale(1.1) rotate(0deg); }
+    65% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) scale(1.15) translateY(-25px); }
+}
+
+/* === 轉場遮罩 === */
+#transition-overlay {
+    position: absolute; inset: 0; z-index: 150;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+}
+#transition-overlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+/* === 粒子背景 === */
+#particle-canvas {
+    position: absolute; inset: 0; z-index: 190;
+    pointer-events: none;
+}
+
+/* === 通用覆蓋層 === */
+.overlay {
+    position: absolute; inset: 0; z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.6);
+    transition: opacity 0.3s;
+}
+.overlay.hidden { display: none; }
+
+/* === 登入選單面板 === */
+.menu-panel {
+    width: 88%; max-width: 360px;
+    background: rgba(20,20,35,0.95);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 28px 24px 20px;
+    display: flex; flex-direction: column;
+    align-items: center;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+.menu-title {
+    font-size: 22px; font-weight: bold;
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+}
+.menu-subtitle {
+    font-size: 12px; color: #999;
+    margin-bottom: 20px;
+}
+.menu-btn {
+    width: 100%; padding: 14px 0;
+    font-size: 16px; font-weight: bold;
+    border: none; border-radius: 8px;
+    cursor: pointer; margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; letter-spacing: 1px;
+    transition: filter 0.2s;
+}
+.menu-btn:active { filter: brightness(0.85); }
+.fb-btn { background: #1877f2; color: #fff; }
+.fb-btn .btn-icon {
+    background: #fff; color: #1877f2;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 14px;
+}
+.google-btn { background: #fff; color: #333; }
+.google-btn .btn-icon {
+    font-size: 18px; font-weight: bold;
+    color: #4285f4;
+}
+.inherit-btn {
+    background: linear-gradient(135deg, #b8860b, #d4a843);
+    color: #fff;
+}
+.start-btn {
+    background: linear-gradient(135deg, #b8860b, #d4a843);
+    color: #fff;
+}
+.menu-divider {
+    font-size: 12px; color: #888;
+    margin: 6px 0 10px;
+}
+.menu-footer {
+    margin-top: 10px;
+    display: flex; flex-direction: column;
+    align-items: center; gap: 6px;
+}
+.menu-link {
+    font-size: 13px; color: #5dade2;
+    cursor: pointer;
+}
+.menu-link:hover { text-decoration: underline; }
+.menu-terms { display: flex; align-items: center; gap: 4px; }
+.menu-sep { color: #666; font-size: 12px; }
+.menu-agree {
+    font-size: 11px; color: #aaa;
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; margin-top: 4px;
+}
+.menu-agree input { accent-color: #5dade2; }
+#agree-warning {
+    font-size: 11px; color: #ff4757;
+    margin-top: 4px; min-height: 16px;
+}
+
+/* === 條款彈窗 === */
+.terms-panel {
+    width: 88%; max-width: 340px;
+    max-height: 70vh;
+    background: rgba(20,20,35,0.97);
+    border: 1px solid rgba(255,215,0,0.15);
+    border-radius: 8px;
+    padding: 24px 20px;
+    display: flex; flex-direction: column;
+    align-items: center;
+    box-shadow: 0 0 30px rgba(0,0,0,0.6);
+}
+.terms-title {
+    font-size: 18px; font-weight: bold;
+    letter-spacing: 3px; margin-bottom: 14px;
+    color: #ffd700;
+}
+.terms-content {
+    width: 100%; flex: 1;
+    overflow-y: auto;
+    font-size: 12px; color: #aaa;
+    line-height: 1.8;
+    padding-right: 6px;
+}
+.terms-content::-webkit-scrollbar { width: 4px; }
+.terms-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+/* === 輸入名字對話框 === */
+.dialog-panel {
+    width: 88%; max-width: 340px;
+    background: radial-gradient(ellipse at top, #1a1a35 0%, #0d0d1a 100%);
+    border: 1.5px solid rgba(184,134,11,0.5);
+    border-radius: 6px;
+    padding: 30px 24px;
+    display: flex; flex-direction: column;
+    align-items: center;
+    position: relative;
+    box-shadow:
+        0 0 40px rgba(184,134,11,0.15),
+        0 0 80px rgba(184,134,11,0.05),
+        inset 0 1px 0 rgba(255,215,0,0.08),
+        0 12px 50px rgba(0,0,0,0.7);
+    animation: dialogAppear 0.5s ease-out;
+}
+@keyframes dialogAppear {
+    from { transform: scale(0.9) translateY(20px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+}
+/* 四角裝飾 */
+.dialog-corner {
+    position: absolute; width: 24px; height: 24px;
+    border-color: #d4a843;
+    border-style: solid;
+}
+.dialog-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+.dialog-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; }
+.dialog-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; }
+.dialog-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+/* 角落光點 */
+.dialog-corner::after {
+    content: '◆';
+    position: absolute;
+    font-size: 8px;
+    color: #d4a843;
+    filter: drop-shadow(0 0 4px rgba(212,168,67,0.8));
+}
+.dialog-corner.tl::after { top: -6px; left: -6px; }
+.dialog-corner.tr::after { top: -6px; right: -6px; }
+.dialog-corner.bl::after { bottom: -6px; left: -6px; }
+.dialog-corner.br::after { bottom: -6px; right: -6px; }
+
+.dialog-title {
+    font-size: 20px; font-weight: bold;
+    letter-spacing: 6px;
+    margin-bottom: 12px;
+    color: #fff;
+    text-shadow: 0 0 12px rgba(255,215,0,0.2);
+}
+.dialog-divider {
+    width: 85%; height: 1px;
+    background: linear-gradient(90deg, transparent, #b8860b 30%, #ffd700 50%, #b8860b 70%, transparent);
+    margin-bottom: 20px;
+    box-shadow: 0 0 6px rgba(255,215,0,0.2);
+}
+.dialog-icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+    background: radial-gradient(circle, #2a2a45, #1a1a30);
+    width: 64px; height: 64px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 12px;
+    border: 1px solid rgba(255,215,0,0.2);
+    box-shadow: 0 0 20px rgba(255,215,0,0.08), inset 0 0 15px rgba(0,0,0,0.3);
+}
+.dialog-label {
+    font-size: 14px; color: #bbb;
+    margin-bottom: 14px;
+    letter-spacing: 3px;
+}
+.dialog-input {
+    width: 100%; padding: 13px 16px;
+    font-size: 16px; color: #fff;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(184,134,11,0.4);
+    border-radius: 6px;
+    outline: none;
+    text-align: center;
+    letter-spacing: 2px;
+    margin-bottom: 22px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+.dialog-input::placeholder { color: #555; }
+.dialog-input:focus {
+    border-color: #ffd700;
+    box-shadow: 0 0 12px rgba(255,215,0,0.2), inset 0 0 8px rgba(255,215,0,0.05);
+}
+
+.dialog-buttons {
+    display: flex; gap: 14px; width: 100%;
+}
+.dialog-btn {
+    flex: 1; padding: 14px 0;
+    font-size: 16px; font-weight: bold;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    letter-spacing: 3px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s;
+}
+.dialog-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    border: 1.5px solid rgba(184,134,11,0.5);
+    border-radius: 5px;
+    pointer-events: none;
+}
+.dialog-btn::after {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 40%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.12), transparent);
+    pointer-events: none;
+    border-radius: 5px 5px 0 0;
+}
+.dialog-btn:active { transform: scale(0.96); }
+.confirm-btn {
+    background: linear-gradient(180deg, #2a7ab5, #1a5a8a, #164a72);
+    color: #e0f0ff;
+    box-shadow: 0 4px 15px rgba(26,90,138,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.cancel-btn {
+    background: linear-gradient(180deg, #2a7ab5, #1a5a8a, #164a72);
+    color: #e0f0ff;
+    box-shadow: 0 4px 15px rgba(26,90,138,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+/* === 名字確認對話框 === */
+.confirm-panel {
+    width: 90%; max-width: 350px;
+    background: radial-gradient(ellipse at top, #141428 0%, #0a0a16 100%);
+    border: 1.5px solid rgba(184,134,11,0.4);
+    border-radius: 8px;
+    padding: 28px 22px 24px;
+    display: flex; flex-direction: column;
+    align-items: center;
+    position: relative;
+    box-shadow:
+        0 0 50px rgba(184,134,11,0.12),
+        0 0 100px rgba(184,134,11,0.04),
+        inset 0 1px 0 rgba(255,215,0,0.06),
+        0 16px 60px rgba(0,0,0,0.8);
+    animation: dialogAppear 0.4s ease-out;
+}
+/* 四角金屬裝飾 */
+.confirm-corner {
+    position: absolute; width: 28px; height: 28px;
+    border-style: solid;
+    border-color: #c9a84c;
+    filter: drop-shadow(0 0 3px rgba(201,168,76,0.6));
+}
+.confirm-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+.confirm-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; }
+.confirm-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; }
+.confirm-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+.confirm-corner::after {
+    content: '';
+    position: absolute;
+    width: 8px; height: 8px;
+    background: radial-gradient(circle, #ffd700, #b8860b);
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(255,215,0,0.8);
+}
+.confirm-corner.tl::after { top: -5px; left: -5px; }
+.confirm-corner.tr::after { top: -5px; right: -5px; }
+.confirm-corner.bl::after { bottom: -5px; left: -5px; }
+.confirm-corner.br::after { bottom: -5px; right: -5px; }
+
+.confirm-header {
+    font-size: 20px; font-weight: bold;
+    letter-spacing: 6px;
+    color: #eee;
+    text-shadow: 0 0 10px rgba(255,255,255,0.1);
+    margin-bottom: 14px;
+}
+.confirm-line-area {
+    display: flex; align-items: center;
+    width: 90%; margin-bottom: 22px;
+}
+.confirm-diamond {
+    font-size: 10px; color: #c9a84c;
+    filter: drop-shadow(0 0 4px rgba(201,168,76,0.7));
+}
+.confirm-line {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, rgba(201,168,76,0.1), rgba(201,168,76,0.5), rgba(201,168,76,0.1));
+    margin: 0 8px;
+}
+.confirm-msg {
+    font-size: 17px; color: #ddd;
+    letter-spacing: 3px;
+    margin-bottom: 10px;
+}
+.confirm-name {
+    font-size: 22px; font-weight: bold;
+    color: #ffd700;
+    letter-spacing: 2px;
+    margin-bottom: 24px;
+    text-shadow: 0 0 12px rgba(255,215,0,0.3);
+    padding: 6px 20px;
+    border-bottom: 1px solid rgba(255,215,0,0.2);
+}
+.confirm-buttons {
+    display: flex; gap: 14px; width: 100%;
+}
+.confirm-btn-action {
+    flex: 1; padding: 14px 0;
+    font-size: 16px; font-weight: bold;
+    letter-spacing: 3px;
+    border-radius: 5px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s;
+    border: none;
+}
+.confirm-btn-action::before {
+    content: '';
+    position: absolute; inset: 0;
+    border: 1.5px solid rgba(184,134,11,0.5);
+    border-radius: 5px;
+    pointer-events: none;
+}
+.confirm-btn-action::after {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 40%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.1), transparent);
+    pointer-events: none;
+    border-radius: 5px 5px 0 0;
+}
+.confirm-btn-action:active { transform: scale(0.96); }
+.confirm-yes {
+    background: linear-gradient(180deg, #2a7ab5, #1a5a8a, #164a72);
+    color: #e0f0ff;
+    box-shadow: 0 4px 15px rgba(26,90,138,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.confirm-back {
+    background: linear-gradient(180deg, #2a7ab5, #1a5a8a, #164a72);
+    color: #e0f0ff;
+    box-shadow: 0 4px 15px rgba(26,90,138,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+/* === 結果畫面 === */
+#result-screen {
+    display: none;
+    position: absolute; inset: 0;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.92);
+    z-index: 300;
+    overflow-y: auto;
+}
+#result-screen.show { display: flex; }
+.result-overlay {
+    width: 90%; max-width: 380px;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 20px 0;
+    animation: resultSlideIn 0.6s ease-out;
+}
+@keyframes resultSlideIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+.result-header { font-size: 14px; color: #aaa; letter-spacing: 2px; margin-bottom: 4px; }
+.result-divider { font-size: 12px; color: #666; margin-bottom: 16px; letter-spacing: 3px; }
+.result-complete {
+    font-size: 42px; font-weight: bold; color: #ffd700;
+    font-style: italic; letter-spacing: 4px;
+    text-shadow: 0 0 30px rgba(255,215,0,0.5), 0 2px 8px rgba(0,0,0,0.8);
+    margin-bottom: 20px;
+    animation: completeGlow 2s ease-in-out infinite alternate;
+}
+@keyframes completeGlow { from { text-shadow: 0 0 20px rgba(255,215,0,0.3); } to { text-shadow: 0 0 40px rgba(255,215,0,0.7), 0 0 80px rgba(255,215,0,0.3); } }
+.fail-text { color: #ff4757; font-size: 36px; }
+.result-fail-msg { color: #999; font-size: 13px; margin-bottom: 20px; }
+.result-rewards {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,215,0,0.15);
+    border-radius: 10px; padding: 12px 16px;
+    margin-bottom: 16px;
+}
+.reward-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.reward-row:last-child { border-bottom: none; }
+.reward-label { color: #ccc; font-size: 14px; }
+.reward-val { font-size: 16px; font-weight: bold; }
+.reward-val.gold { color: #ffd700; }
+.reward-val.exp { color: #64c8ff; }
+.reward-val.gem { color: #ff6b9d; }
+.first-clear { background: rgba(255,215,0,0.08); border-radius: 6px; padding: 6px 8px; margin-top: 4px; }
+.result-drop-section {
+    width: 100%; text-align: center; margin-bottom: 16px;
+    animation: dropReveal 0.8s ease-out 0.5s both;
+}
+@keyframes dropReveal { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+.result-drop-title { color: #ffd700; font-size: 16px; letter-spacing: 3px; margin-bottom: 8px; }
+.result-drop-card {
+    display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,107,155,0.1));
+    border: 1.5px solid rgba(255,215,0,0.4); border-radius: 10px;
+    padding: 10px 14px;
+}
+.result-drop-card img { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; border: 2px solid #ffd700; }
+.drop-card-info { display: flex; flex-direction: column; gap: 4px; }
+.drop-rarity.ssr { color: #ffd700; font-size: 12px; font-weight: bold; }
+.drop-name { color: #fff; font-size: 14px; }
+.result-loot-section {
+    width: 100%;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px; padding: 10px 14px;
+    margin-bottom: 20px;
+}
+.result-loot-title { color: #aaa; font-size: 13px; text-align: center; margin-bottom: 8px; letter-spacing: 2px; }
+.result-loot-items { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.loot-item { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #ddd; }
+.loot-icon { font-size: 18px; }
+.loot-card-img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; border: 1px solid #ffd700; }
+.loot-ssr { color: #ffd700; font-weight: bold; }
+.result-buttons { display: flex; gap: 12px; }
+.result-btn-back {
+    padding: 12px 40px; font-size: 15px; font-weight: bold;
+    color: #fff; background: linear-gradient(135deg, #1a2a5a, #0d1530);
+    border: 1.5px solid rgba(255,215,0,0.3); border-radius: 25px;
+    cursor: pointer; letter-spacing: 2px; transition: filter 0.2s;
+}
+.result-btn-back:active { filter: brightness(0.7); }
+
+/* === 角色傷害數字 === */
+.char-dmg-num {
+    position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; font-weight: bold; white-space: nowrap;
+    pointer-events: none; z-index: 10;
+    animation: charDmgFloat 1.2s ease-out forwards;
+}
+@keyframes charDmgFloat {
+    0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+}
+
+/* === Combo 百分比 === */
+.combo-pct {
+    display: block; font-size: 18px; font-weight: bold; letter-spacing: 1px;
+}
+.combo-pct.big { font-size: 24px; }
+
+/* === 震動動畫 === */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10% { transform: translateX(-10px) translateY(2px); }
+    20% { transform: translateX(10px) translateY(-2px); }
+    30% { transform: translateX(-8px) translateY(1px); }
+    40% { transform: translateX(8px) translateY(-1px); }
+    50% { transform: translateX(-6px); }
+    60% { transform: translateX(6px); }
+    70% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+    90% { transform: translateX(-2px); }
+}
+@keyframes headShake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-6px); }
+    30% { transform: translateX(5px); }
+    45% { transform: translateX(-4px); }
+    60% { transform: translateX(3px); }
+    75% { transform: translateX(-2px); }
+}
+
+/* === 敵人攻擊受擊特效 === */
+.enemy-attack-vignette {
+    position: absolute; inset: 0; z-index: 12;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(255,0,0,0.5) 100%);
+    opacity: 0;
+    animation: vignetteFlash 0.5s ease-out forwards;
+}
+@keyframes vignetteFlash {
+    0% { opacity: 0; }
+    20% { opacity: 1; }
+    100% { opacity: 0; }
+}
+.enemy-attack-slash {
+    position: absolute; inset: 0; z-index: 13;
+    pointer-events: none;
+    overflow: hidden;
+}
+.slash-line {
+    position: absolute;
+    width: 200%; height: 3px;
+    top: 50%; left: -50%;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,100,100,0.8) 30%, #fff 50%, rgba(255,100,100,0.8) 70%, transparent 100%);
+    transform-origin: center;
+    opacity: 0;
+    box-shadow: 0 0 15px rgba(255,50,50,0.6), 0 0 30px rgba(255,50,50,0.3);
+}
+.slash-line:nth-child(1) {
+    transform: rotate(-35deg);
+    animation: slashAppear 0.35s 0.05s ease-out forwards;
+}
+.slash-line:nth-child(2) {
+    transform: rotate(25deg);
+    animation: slashAppear 0.35s 0.12s ease-out forwards;
+}
+.slash-line:nth-child(3) {
+    transform: rotate(-10deg) translateY(-30px);
+    animation: slashAppear 0.35s 0.18s ease-out forwards;
+}
+@keyframes slashAppear {
+    0% { opacity: 0; transform: rotate(inherit) scaleX(0); }
+    30% { opacity: 1; transform: rotate(inherit) scaleX(1); }
+    100% { opacity: 0; transform: rotate(inherit) scaleX(1.1); }
+}
+.screen-flash {
+    position: absolute; inset: 0; z-index: 14;
+    pointer-events: none;
+    background: #fff;
+    opacity: 0;
+    animation: screenFlashAnim 0.2s ease-out forwards;
+}
+@keyframes screenFlashAnim {
+    0% { opacity: 0.6; }
+    100% { opacity: 0; }
+}
+
+/* === 攻擊敵人斬擊特效 === */
+.attack-slash-overlay {
+    position: absolute; inset: 0; z-index: 11;
+    pointer-events: none;
+    overflow: hidden;
+}
+.attack-slash-line {
+    position: absolute;
+    width: 120%; height: 2.5px;
+    top: 25%; left: -10%;
+    background: linear-gradient(90deg, transparent, rgba(255,215,0,0.9) 40%, #fff 50%, rgba(255,215,0,0.9) 60%, transparent);
+    transform-origin: center;
+    opacity: 0;
+    box-shadow: 0 0 12px rgba(255,215,0,0.5), 0 0 24px rgba(255,215,0,0.2);
+}
+.attack-slash-line:nth-child(1) {
+    transform: rotate(-40deg);
+    animation: atkSlash 0.3s 0s ease-out forwards;
+}
+.attack-slash-line:nth-child(2) {
+    transform: rotate(30deg);
+    animation: atkSlash 0.3s 0.08s ease-out forwards;
+}
+@keyframes atkSlash {
+    0% { opacity: 0; transform: rotate(inherit) scaleX(0) translateX(-30%); }
+    40% { opacity: 1; transform: rotate(inherit) scaleX(1) translateX(0); }
+    100% { opacity: 0; transform: rotate(inherit) scaleX(1.05) translateX(5%); }
+}
+
+/* === 敵人死亡爆炸特效 === */
+.enemy-death-flash {
+    position: absolute; inset: 0; z-index: 14;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 30%, #fff 0%, rgba(255,215,0,0.4) 30%, transparent 70%);
+    opacity: 0;
+    animation: deathFlash 0.8s ease-out forwards;
+}
+@keyframes deathFlash {
+    0% { opacity: 0; transform: scale(0.5); }
+    15% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.5); }
+}
+
+/* === 盤面拖曳軌跡光效 === */
+.drag-trail-glow {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    animation: trailFade 0.4s ease-out forwards;
+}
+@keyframes trailFade {
+    0% { opacity: 0.6; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.3); }
+}
+
+/* ===== 故事對話系統 ===== */
+#story-dialog-screen {
+    position: absolute; inset: 0; z-index: 300;
+    display: flex; flex-direction: column; justify-content: flex-end;
+}
+#story-dialog-screen.hidden { display: none; }
+.story-dialog-bg {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, #0a0e1a 0%, #1a1040 40%, #0d0820 100%);
+    z-index: 0;
+}
+.story-dialog-overlay {
+    position: absolute; inset: 0; z-index: 1;
+    background: radial-gradient(ellipse at 50% 30%, rgba(100,200,255,0.05) 0%, transparent 70%);
+    pointer-events: none;
+}
+.story-dialog-skip {
+    position: absolute; top: 12px; right: 12px; z-index: 10;
+    padding: 6px 16px; border-radius: 20px;
+    background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.15);
+    color: #aaa; font-size: 12px; letter-spacing: 2px; cursor: pointer;
+    transition: all 0.2s;
+}
+.story-dialog-skip:active { background: rgba(255,255,255,0.1); color: #fff; }
+.story-dialog-box {
+    position: relative; z-index: 10;
+    margin: 0 12px 24px; padding: 18px 20px 14px;
+    background: linear-gradient(180deg, rgba(10,14,30,0.95), rgba(5,8,20,0.98));
+    border: 1px solid rgba(100,200,255,0.15);
+    border-radius: 12px;
+    box-shadow: 0 -4px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(100,200,255,0.08);
+    cursor: pointer; min-height: 100px;
+}
+.story-dialog-speaker {
+    font-size: 14px; font-weight: bold; color: #ffd700;
+    letter-spacing: 2px; margin-bottom: 8px;
+    text-shadow: 0 0 8px rgba(255,215,0,0.3);
+}
+.story-dialog-text {
+    font-size: 13px; color: #ddd; line-height: 1.8;
+    letter-spacing: 1px; min-height: 40px;
+}
+.story-dialog-next {
+    text-align: right; font-size: 10px; color: #555;
+    margin-top: 8px; animation: storyNextBlink 1.5s ease-in-out infinite;
+}
+@keyframes storyNextBlink {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+/* 故事對話打字機效果 */
+.story-dialog-text .typing-cursor {
+    display: inline-block; width: 2px; height: 14px;
+    background: #ffd700; margin-left: 2px;
+    animation: cursorBlink 0.6s step-end infinite;
+    vertical-align: middle;
+}
+@keyframes cursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ===== 傷害噴射粒子 ===== */
+.dmg-particle {
+    position: absolute; z-index: 15;
+    border-radius: 50%; pointer-events: none;
+    animation: dmgParticleFly 0.7s ease-out forwards;
+    box-shadow: 0 0 4px currentColor;
+}
+@keyframes dmgParticleFly {
+    0% { opacity: 1; transform: translate(0, 0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.3); }
+}
+
+
+/* ===== 戰鬥頂部欄 ===== */
+#battle-topbar {
+    position: relative; z-index: 2;
+    display: flex; align-items: center;
+    padding: 6px 10px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.3) 100%);
+    gap: 8px;
+}
+#battle-exit-btn {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ccc; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: all 0.2s;
+}
+#battle-exit-btn:active { background: rgba(255,71,87,0.3); color: #ff4757; }
+#battle-topbar #stage-info {
+    flex: 1; text-align: center;
+    font-size: 12px; color: #ccc;
+    letter-spacing: 2px;
+    margin-bottom: 0;
+}
+#battle-turn-count {
+    font-size: 10px; color: #888;
+    letter-spacing: 1px; flex-shrink: 0;
+    min-width: 50px; text-align: right;
+}
+
+/* ===== 敵人放大 + 進場動畫 ===== */
+/* 敵人進場動畫 */
+@keyframes enemyEntrance {
+    0% { opacity: 0; transform: scale(0.1) translateY(-100px); filter: brightness(5) blur(8px); }
+    20% { opacity: 1; transform: scale(1.3) translateY(10px); filter: brightness(2) blur(0); }
+    40% { transform: scale(0.9) translateY(-5px); filter: brightness(1.2); }
+    60% { transform: scale(1.1) translateY(3px); }
+    80% { transform: scale(0.98) translateY(-1px); }
+    100% { transform: scale(1) translateY(0); filter: brightness(1) blur(0); }
+}
+#enemy-sprite.enemy-enter {
+    animation: enemyEntrance 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+/* 進場閃光 */
+@keyframes enemyEnterFlash {
+    0% { opacity: 0; transform: scale(0.3); }
+    15% { opacity: 1; transform: scale(1.5); }
+    100% { opacity: 0; transform: scale(3); }
+}
+.enemy-enter-flash {
+    position: absolute; inset: -60px; z-index: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,200,100,0.4) 30%, transparent 60%);
+    pointer-events: none;
+    animation: enemyEnterFlash 0.8s ease-out forwards;
+}
+/* 進場衝擊波 */
+@keyframes enemyEnterShockwave {
+    0% { opacity: 0.8; transform: scale(0.2); border-width: 3px; }
+    100% { opacity: 0; transform: scale(3); border-width: 0.5px; }
+}
+.enemy-enter-shockwave {
+    position: absolute; z-index: 0;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.6);
+    pointer-events: none;
+    animation: enemyEnterShockwave 0.7s 0.1s ease-out forwards;
+    opacity: 0;
+}
+
+/* ===== 技能確認對話框 ===== */
+.skill-confirm-panel {
+    width: 80%; max-width: 300px;
+    background: radial-gradient(ellipse at top, #1a1a35 0%, #0d0d1a 100%);
+    border: 1.5px solid rgba(255,215,0,0.4);
+    border-radius: 12px;
+    padding: 24px 20px 20px;
+    display: flex; flex-direction: column;
+    align-items: center;
+    box-shadow: 0 0 40px rgba(255,215,0,0.15), 0 12px 50px rgba(0,0,0,0.7);
+    animation: dialogAppear 0.3s ease-out;
+}
+.skill-confirm-icon {
+    font-size: 40px; margin-bottom: 8px;
+}
+.skill-confirm-name {
+    font-size: 18px; font-weight: bold; color: #ffd700;
+    letter-spacing: 3px; margin-bottom: 6px;
+    text-shadow: 0 0 10px rgba(255,215,0,0.3);
+}
+.skill-confirm-desc {
+    font-size: 12px; color: #aaa;
+    text-align: center; line-height: 1.6;
+    margin-bottom: 18px; letter-spacing: 1px;
+}
+.skill-confirm-btns {
+    display: flex; gap: 12px; width: 100%;
+}
+.skill-confirm-yes, .skill-confirm-no {
+    flex: 1; padding: 12px 0;
+    font-size: 15px; font-weight: bold;
+    border: none; border-radius: 6px;
+    cursor: pointer; letter-spacing: 2px;
+    transition: all 0.2s;
+}
+.skill-confirm-yes {
+    background: linear-gradient(180deg, #c9a84c, #b8860b);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(184,134,11,0.4);
+}
+.skill-confirm-yes:active { filter: brightness(0.8); transform: scale(0.96); }
+.skill-confirm-no {
+    background: linear-gradient(180deg, #2a3a5a, #1a2a4a);
+    color: #aaa;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.skill-confirm-no:active { filter: brightness(0.8); transform: scale(0.96); }
+
+
+/* ===== 故事序章 ===== */
+#prologue-screen {
+    position: absolute; inset: 0; z-index: 500;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    overflow: hidden;
+}
+#prologue-screen.hidden { display: none; }
+.prologue-bg {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, #020208 0%, #0a0520 30%, #150a30 60%, #0a0520 100%);
+    z-index: 0;
+}
+.prologue-overlay {
+    position: absolute; inset: 0; z-index: 1;
+    background: radial-gradient(ellipse at 50% 40%, rgba(80,40,120,0.08) 0%, transparent 60%);
+    pointer-events: none;
+}
+.prologue-content {
+    position: relative; z-index: 2;
+    width: 85%; max-width: 360px;
+    text-align: center;
+}
+.prologue-text {
+    font-size: 15px; color: #ccc;
+    line-height: 2.2; letter-spacing: 2px;
+    text-shadow: 0 0 20px rgba(100,150,255,0.2);
+    min-height: 60px;
+}
+.prologue-skip {
+    position: absolute; top: 14px; right: 14px; z-index: 10;
+    padding: 6px 16px; border-radius: 20px;
+    background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.12);
+    color: #888; font-size: 12px; letter-spacing: 2px; cursor: pointer;
+}
+.prologue-skip:active { color: #fff; background: rgba(255,255,255,0.1); }
+/* 序章震動 */
+@keyframes prologueShake {
+    0%, 100% { transform: translate(0,0); }
+    10% { transform: translate(-8px, 4px); }
+    20% { transform: translate(6px, -3px); }
+    30% { transform: translate(-5px, 5px); }
+    40% { transform: translate(7px, -2px); }
+    50% { transform: translate(-4px, 3px); }
+    60% { transform: translate(5px, -4px); }
+    70% { transform: translate(-3px, 2px); }
+    80% { transform: translate(4px, -1px); }
+    90% { transform: translate(-2px, 1px); }
+}
+#prologue-screen.shake {
+    animation: prologueShake 0.6s ease-out;
+}
+/* 序章閃白 */
+.prologue-flash {
+    position: absolute; inset: 0; z-index: 50;
+    background: #fff; pointer-events: none;
+    animation: prologueFlashAnim 0.8s ease-out forwards;
+}
+@keyframes prologueFlashAnim {
+    0% { opacity: 0; }
+    10% { opacity: 0.9; }
+    100% { opacity: 0; }
+}
+
+/* ===== 抽卡演出（神魔之塔風格：拉門揭卡） ===== */
+#gacha-anim-screen {
+    position: absolute; inset: 0; z-index: 400;
+    background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    overflow: hidden;
+}
+#gacha-anim-screen.hidden { display: none; }
+#gacha-anim-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+}
+
+/* 門扉 */
+#gacha-door-wrap {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; pointer-events: none;
+}
+.gacha-door {
+    width: 50%; height: 100%;
+    transition: transform 0.5s ease-out;
+}
+.gacha-door.door-r {
+    background: linear-gradient(135deg, #1a1040 0%, #2a1860 50%, #1a1040 100%);
+    border: 1px solid rgba(184,134,11,0.3);
+}
+.gacha-door.door-sr {
+    background: linear-gradient(135deg, #1a1050 0%, #3a1880 50%, #1a1050 100%);
+    border: 1px solid rgba(199,125,255,0.4);
+}
+.gacha-door.door-ssr {
+    background: linear-gradient(135deg, #2a1a00 0%, #3a2800 50%, #2a1a00 100%);
+    border: 1px solid rgba(255,215,0,0.5);
+}
+#gacha-door-left { border-right: 1px solid rgba(255,255,255,0.1); }
+#gacha-door-right { border-left: 1px solid rgba(255,255,255,0.1); }
+
+/* 中央卡片舞台 */
+#gacha-card-stage {
+    position: absolute; z-index: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#gacha-card-reveal {
+    width: 200px; height: 280px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 30px rgba(0,0,0,0.8);
+    transition: transform 0.5s ease, box-shadow 0.5s ease;
+}
+.gacha-card-back-img, .gacha-card-front-img {
+    width: 100%; height: 100%; object-fit: cover;
+    display: block;
+}
+#gacha-card-reveal.gacha-card-revealed {
+    animation: cardRevealPop 0.5s ease-out;
+    box-shadow: 0 0 40px rgba(255,215,0,0.4);
+}
+@keyframes cardRevealPop {
+    0% { transform: scale(0.8) rotateY(90deg); }
+    50% { transform: scale(1.05) rotateY(-5deg); }
+    100% { transform: scale(1) rotateY(0); }
+}
+#gacha-card-name {
+    margin-top: 16px;
+    font-size: 18px; font-weight: bold; color: #fff;
+    text-shadow: 0 0 10px rgba(255,215,0,0.5);
+    letter-spacing: 3px;
+    transition: opacity 0.4s ease;
+    z-index: 3;
+}
+#gacha-card-rarity {
+    margin-top: 6px;
+    font-size: 14px; font-weight: bold;
+    letter-spacing: 4px;
+    transition: opacity 0.4s ease;
+    z-index: 3;
+}
+.rarity-ssr { color: #ffd700; text-shadow: 0 0 12px rgba(255,215,0,0.8); }
+.rarity-sr { color: #c77dff; text-shadow: 0 0 10px rgba(199,125,255,0.6); }
+.rarity-r { color: #b8860b; text-shadow: 0 0 8px rgba(184,134,11,0.4); }
+
+/* 提示文字 */
+#gacha-pull-hint {
+    position: absolute; bottom: 60px;
+    width: 100%; text-align: center;
+    font-size: 13px; color: rgba(255,255,255,0.5);
+    letter-spacing: 4px; z-index: 3;
+    transition: opacity 0.3s ease;
+    animation: hintBlink 2s ease-in-out infinite;
+}
+@keyframes hintBlink {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.8; }
+}
+
+/* 計數器 */
+#gacha-counter {
+    position: absolute; top: 20px; right: 20px;
+    font-size: 14px; color: rgba(255,255,255,0.6);
+    letter-spacing: 2px; z-index: 3;
+}
+
+/* 跳過按鈕 */
+#gacha-skip-btn {
+    position: absolute; top: 20px; left: 20px;
+    padding: 6px 16px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 16px;
+    color: rgba(255,255,255,0.6); font-size: 12px;
+    cursor: pointer; z-index: 10;
+    letter-spacing: 2px;
+}
+#gacha-skip-btn.hidden { display: none; }
+#gacha-skip-btn:active { background: rgba(255,255,255,0.2); }
+
+/* SSR 閃光 */
+.gacha-ssr-flash {
+    position: absolute; inset: 0; z-index: 8;
+    background: radial-gradient(circle, rgba(255,215,0,0.9) 0%, rgba(255,255,255,0.6) 30%, transparent 70%);
+    pointer-events: none;
+    animation: gachaFlash 0.8s ease-out forwards;
+}
+.gacha-sr-flash {
+    position: absolute; inset: 0; z-index: 8;
+    background: radial-gradient(circle, rgba(199,125,255,0.6) 0%, rgba(199,125,255,0.2) 40%, transparent 70%);
+    pointer-events: none;
+    animation: gachaFlash 0.6s ease-out forwards;
+}
+@keyframes gachaFlash {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* === SSR 震動集氣 === */
+.gacha-shake-charge {
+    animation: gachaShakeCharge 1.2s ease-in-out;
+}
+@keyframes gachaShakeCharge {
+    0% { transform: translate(0, 0); }
+    5% { transform: translate(-2px, 1px); }
+    10% { transform: translate(2px, -1px); }
+    15% { transform: translate(-3px, 2px); }
+    20% { transform: translate(3px, -2px); }
+    25% { transform: translate(-3px, 1px); }
+    30% { transform: translate(4px, -2px); }
+    35% { transform: translate(-4px, 3px); }
+    40% { transform: translate(4px, -3px); }
+    45% { transform: translate(-5px, 2px); }
+    50% { transform: translate(5px, -3px); }
+    55% { transform: translate(-5px, 4px); }
+    60% { transform: translate(6px, -4px); }
+    65% { transform: translate(-6px, 3px); }
+    70% { transform: translate(7px, -4px); }
+    75% { transform: translate(-7px, 5px); }
+    80% { transform: translate(8px, -5px); }
+    85% { transform: translate(-8px, 5px); }
+    90% { transform: translate(9px, -6px); }
+    95% { transform: translate(-9px, 6px); }
+    100% { transform: translate(0, 0); }
+}
+
+/* SSR 集氣光球 */
+.gacha-charge-orb {
+    position: absolute; left: 50%; top: 50%;
+    width: 20px; height: 20px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, #ffd700 40%, transparent 70%);
+    z-index: 9; pointer-events: none;
+    animation: chargeOrbGrow 1.2s ease-in forwards;
+}
+@keyframes chargeOrbGrow {
+    0% { width: 20px; height: 20px; opacity: 0.3; }
+    50% { width: 80px; height: 80px; opacity: 0.7; }
+    90% { width: 200px; height: 200px; opacity: 1; }
+    100% { width: 600px; height: 600px; opacity: 0; }
+}
+
+/* SSR 爆炸 */
+.gacha-ssr-explosion {
+    position: absolute; inset: 0; z-index: 9;
+    pointer-events: none;
+    animation: ssrExplosion 1s ease-out forwards;
+}
+@keyframes ssrExplosion {
+    0% { background: rgba(255,255,255,1); }
+    15% { background: rgba(255,235,180,0.9); }
+    40% { background: rgba(255,215,0,0.4); }
+    100% { background: transparent; }
+}
+
+/* SSR 金色粒子爆發 */
+.gacha-ssr-particle {
+    position: absolute; left: 50%; top: 50%;
+    width: var(--size, 4px); height: var(--size, 4px);
+    border-radius: 50%;
+    background: #ffd700;
+    box-shadow: 0 0 6px #ffd700, 0 0 12px rgba(255,215,0,0.5);
+    z-index: 8; pointer-events: none;
+    animation: ssrParticleBurst 1.2s ease-out var(--delay, 0s) forwards;
+}
+@keyframes ssrParticleBurst {
+    0% { transform: translate(-50%, -50%) rotate(var(--angle)) translateY(0); opacity: 1; }
+    70% { opacity: 1; }
+    100% { transform: translate(-50%, -50%) rotate(var(--angle)) translateY(calc(var(--dist) * -1)); opacity: 0; }
+}
+
+/* SSR 卡片金色脈衝 */
+.gacha-ssr-glow {
+    animation: ssrCardGlow 0.6s ease-in-out 3;
+    box-shadow: 0 0 40px rgba(255,215,0,0.8), 0 0 80px rgba(255,215,0,0.4) !important;
+}
+@keyframes ssrCardGlow {
+    0%, 100% { box-shadow: 0 0 30px rgba(255,215,0,0.5), 0 0 60px rgba(255,215,0,0.2); }
+    50% { box-shadow: 0 0 50px rgba(255,215,0,1), 0 0 100px rgba(255,215,0,0.5); }
+}
+
+/* === SR 紫色光環擴散 === */
+.gacha-sr-ring {
+    position: absolute; left: 50%; top: 50%;
+    width: 40px; height: 40px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 3px solid rgba(199,125,255,0.8);
+    box-shadow: 0 0 20px rgba(199,125,255,0.4), inset 0 0 20px rgba(199,125,255,0.2);
+    z-index: 8; pointer-events: none;
+    animation: srRingExpand 0.8s ease-out forwards;
+}
+@keyframes srRingExpand {
+    0% { width: 40px; height: 40px; opacity: 1; border-width: 3px; }
+    100% { width: 400px; height: 400px; opacity: 0; border-width: 1px; }
+}
+
+/* SR 星光粒子 */
+.gacha-sr-sparkle {
+    position: absolute; left: 50%; top: 50%;
+    width: 6px; height: 6px;
+    z-index: 8; pointer-events: none;
+    animation: srSparkle 1s ease-out var(--delay, 0s) forwards;
+}
+.gacha-sr-sparkle::before {
+    content: '✦';
+    font-size: 12px;
+    color: #c77dff;
+    text-shadow: 0 0 8px rgba(199,125,255,0.8);
+}
+@keyframes srSparkle {
+    0% { transform: translate(-50%, -50%) rotate(var(--angle)) translateY(0); opacity: 1; }
+    60% { opacity: 1; }
+    100% { transform: translate(-50%, -50%) rotate(var(--angle)) translateY(calc(var(--dist) * -1)); opacity: 0; }
+}
+
+/* SR 卡片紫色脈衝 */
+.gacha-sr-glow {
+    animation: srCardGlow 0.5s ease-in-out 2;
+    box-shadow: 0 0 30px rgba(199,125,255,0.6), 0 0 60px rgba(199,125,255,0.3) !important;
+}
+@keyframes srCardGlow {
+    0%, 100% { box-shadow: 0 0 20px rgba(199,125,255,0.3), 0 0 40px rgba(199,125,255,0.1); }
+    50% { box-shadow: 0 0 40px rgba(199,125,255,0.8), 0 0 80px rgba(199,125,255,0.4); }
+}
+
+/* SSR 光柱 */
+.gacha-ssr-beam {
+    position: absolute; left: 50%; top: 0;
+    width: 60px; height: 100%;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, rgba(255,215,0,0.6) 0%, rgba(255,215,0,0) 100%);
+    pointer-events: none; z-index: 7;
+    animation: beamFade 1.5s ease-out forwards;
+}
+@keyframes beamFade {
+    0% { opacity: 1; width: 60px; }
+    50% { opacity: 0.6; width: 120px; }
+    100% { opacity: 0; width: 200px; }
+}
+
+/* 抽卡結果確認 */
+#gacha-anim-reveal {
+    position: absolute; inset: 0; z-index: 5;
+    background: rgba(0,0,0,0.85);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+}
+#gacha-anim-reveal.hidden { display: none; }
+#gacha-reveal-cards {
+    display: flex; flex-wrap: wrap;
+    justify-content: center; gap: 10px;
+    padding: 20px; max-width: 360px;
+}
+.gacha-reveal-card {
+    width: 70px; height: 90px;
+    border-radius: 8px; overflow: hidden;
+    position: relative;
+    animation: revealCardPop 0.4s ease-out both;
+}
+.gacha-reveal-card img {
+    width: 100%; height: 100%; object-fit: cover;
+}
+.gacha-reveal-card .reveal-rarity {
+    position: absolute; top: 2px; right: 2px;
+    font-size: 8px; font-weight: bold;
+    background: rgba(0,0,0,0.7); color: #ffd700;
+    padding: 1px 4px; border-radius: 3px;
+}
+.gacha-reveal-card.ssr {
+    border: 2px solid #ffd700;
+    box-shadow: 0 0 20px rgba(255,215,0,0.5);
+}
+.gacha-reveal-card.sr {
+    border: 2px solid #c77dff;
+    box-shadow: 0 0 15px rgba(199,125,255,0.3);
+}
+.gacha-reveal-card.r {
+    border: 2px solid #b8860b;
+    box-shadow: 0 0 10px rgba(184,134,11,0.2);
+}
+@keyframes revealCardPop {
+    0% { transform: scale(0) rotateY(90deg); opacity: 0; }
+    60% { transform: scale(1.1) rotateY(-5deg); opacity: 1; }
+    100% { transform: scale(1) rotateY(0); opacity: 1; }
+}
+
+/* ===== 初始角色選擇 ===== */
+.starter-panel {
+    position: absolute; inset: 0; background: linear-gradient(180deg, #0a0e1a 0%, #141830 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;
+}
+.starter-title {
+    font-size: 22px; font-weight: bold; color: #ffd700; letter-spacing: 4px; margin-bottom: 6px;
+    text-shadow: 0 0 12px rgba(255,215,0,0.4);
+}
+.starter-subtitle { font-size: 12px; color: #888; margin-bottom: 18px; }
+.starter-cards {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; width: 100%; max-width: 340px;
+}
+.starter-cards .starter-card:nth-child(1),
+.starter-cards .starter-card:nth-child(2),
+.starter-cards .starter-card:nth-child(3) { grid-column: span 2; }
+.starter-cards .starter-card:nth-child(4) { grid-column: 2 / span 2; }
+.starter-cards .starter-card:nth-child(5) { grid-column: 4 / span 2; }
+.starter-card {
+    aspect-ratio: 3/4; border-radius: 10px; overflow: hidden; position: relative; cursor: pointer;
+    background: rgba(20,24,50,0.9); border: 2px solid rgba(255,255,255,0.08); transition: all 0.3s;
+}
+.starter-card img { width: 100%; height: 100%; object-fit: contain; }
+.starter-card.selected { border-color: #ffd700; box-shadow: 0 0 20px rgba(255,215,0,0.4); transform: scale(1.05); }
+.starter-card-name {
+    position: absolute; bottom: 0; left: 0; right: 0; padding: 4px; text-align: center;
+    font-size: 10px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.8));
+}
+.starter-card-element {
+    position: absolute; top: 4px; left: 4px; width: 20px; height: 20px;
+}
+.starter-card-element img { width: 100%; height: 100%; }
+.starter-selected-info {
+    margin-top: 14px; min-height: 60px; text-align: center; color: #ccc; font-size: 12px; line-height: 1.6;
+}
+.starter-confirm-btn {
+    margin-top: 12px; padding: 12px 40px; border: none; border-radius: 25px; font-size: 16px;
+    font-weight: bold; color: #fff; background: linear-gradient(135deg, #ffd700, #ff8c00);
+    cursor: pointer; letter-spacing: 2px; transition: all 0.3s;
+}
+.starter-confirm-btn:disabled { opacity: 0.4; cursor: default; }

@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CaiTianKaiMen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="lobby.css">
+</head>
+<body>
+<div id="game-container">
+    <!-- 登入畫面（點擊進入） -->
+    <div id="login-screen" onclick="showLoginMenu()">
+        <img src="登入&主城/登入畫面.png" alt="登入畫面">
+        <div class="login-version">v2.0.0</div>
+        <div class="login-bottom">
+            <div class="login-game-title">CaiTianKaiMen</div>
+            <div class="login-tap-area">
+                <div class="login-line"></div>
+                <div class="login-tap-text">點擊螢幕進入遊戲</div>
+                <div class="login-line"></div>
+            </div>
+            <div class="login-credit">© 2026 Made by Xuan. All rights reserved.</div>
+        </div>
+    </div>
+
+    <!-- 轉場遮罩 -->
+    <div id="transition-overlay"></div>
+
+    <!-- 粒子背景 -->
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- 登入選單（帳號綁定 / 直接開始） -->
+    <div id="login-menu" class="overlay hidden">
+        <div class="menu-panel">
+            <div class="menu-title">開始遊戲</div>
+            <div class="menu-subtitle">使用帳戶綁定登入可避免遊戲帳號遺失</div>
+            <button class="menu-btn fb-btn" onclick="alert('Facebook 登入功能開發中')">
+                <span class="btn-icon">f</span> 使用 Facebook 繼續
+            </button>
+            <button class="menu-btn google-btn" onclick="alert('Google 登入功能開發中')">
+                <span class="btn-icon">G</span> 以 Google 帳戶登入
+            </button>
+            <button class="menu-btn inherit-btn" onclick="alert('帳號繼承功能開發中')">
+                📱 帳號繼承
+            </button>
+            <div class="menu-divider">或不綁定帳號開始遊戲</div>
+            <button class="menu-btn start-btn" onclick="tryStart()">
+                📱 直接開始
+            </button>
+            <div class="menu-footer">
+                <div class="menu-terms">
+                    <span class="menu-link" onclick="showTerms('privacy')">私隱條款</span>
+                    <span class="menu-sep">｜</span>
+                    <span class="menu-link" onclick="showTerms('service')">服務條款</span>
+                </div>
+                <label class="menu-agree">
+                    <input type="checkbox" id="agree-check"> 我已閱讀並同意以上使用者條款
+                </label>
+                <div id="agree-warning"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 輸入名字對話框 -->
+    <div id="name-dialog" class="overlay hidden">
+        <div class="dialog-panel">
+            <div class="dialog-corner tl"></div>
+            <div class="dialog-corner tr"></div>
+            <div class="dialog-corner bl"></div>
+            <div class="dialog-corner br"></div>
+            <div class="dialog-title">開始遊戲</div>
+            <div class="dialog-divider"></div>
+            <div class="dialog-icon">✏️</div>
+            <div class="dialog-label">你的召喚師名稱</div>
+            <input type="text" id="player-name-input" class="dialog-input" maxlength="12" placeholder="請輸入名稱...">
+            <div class="dialog-buttons">
+                <button class="dialog-btn confirm-btn" onclick="confirmName()">確定</button>
+                <button class="dialog-btn cancel-btn" onclick="hideNameDialog()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 名字確認對話框 -->
+    <div id="confirm-dialog" class="overlay hidden">
+        <div class="confirm-panel">
+            <div class="confirm-corner tl"></div>
+            <div class="confirm-corner tr"></div>
+            <div class="confirm-corner bl"></div>
+            <div class="confirm-corner br"></div>
+            <div class="confirm-header">開始遊戲</div>
+            <div class="confirm-line-area">
+                <span class="confirm-diamond">◆</span>
+                <div class="confirm-line"></div>
+                <span class="confirm-diamond">◆</span>
+            </div>
+            <div class="confirm-msg">確定帳戶名字？</div>
+            <div class="confirm-name" id="confirm-name-display"></div>
+            <div class="confirm-buttons">
+                <button class="confirm-btn-action confirm-yes" onclick="finalConfirm()">確定</button>
+                <button class="confirm-btn-action confirm-back" onclick="cancelConfirm()">返回</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 初始角色選擇 -->
+    <div id="starter-select" class="overlay hidden">
+        <div class="starter-panel">
+            <div class="starter-title">選擇你的初始夥伴</div>
+            <div class="starter-subtitle">選擇一張 R 卡作為你的起始角色</div>
+            <div class="starter-cards" id="starter-cards"></div>
+            <div class="starter-selected-info" id="starter-selected-info"></div>
+            <button class="starter-confirm-btn" id="starter-confirm-btn" onclick="confirmStarter()" disabled>確認選擇</button>
+        </div>
+    </div>
+
+    <!-- 條款彈窗 -->
+    <div id="terms-dialog" class="overlay hidden">
+        <div class="terms-panel">
+            <div class="terms-title" id="terms-title"></div>
+            <div class="terms-content" id="terms-content"></div>
+            <button class="dialog-btn cancel-btn" onclick="closeTerms()" style="margin-top:16px;">關閉</button>
+        </div>
+    </div>
+
+    <!-- 主城大廳 -->
+    <div id="lobby-screen">
+        <!-- 上方背景裝飾 -->
+        <div class="lobby-top-bg"></div>
+        <!-- 頂部資訊列 -->
+        <div class="lobby-topbar">
+            <div class="topbar-left">
+                <div class="player-badge" id="lobby-badge" onclick="showBadgeSelect()">
+                    <span class="badge-icon" id="badge-icon">⚔️</span>
+                    <div class="badge-shine"></div>
+                </div>
+                <div class="player-info">
+                    <div class="player-name-display" id="lobby-player-name" onclick="editPlayerName()">召喚師 <span class="name-edit-icon">✏️</span></div>
+                    <div class="player-level">Lv.<span id="lobby-lv">1</span> <div class="exp-bar-mini"><div class="exp-bar-mini-fill" id="lobby-exp-fill"></div></div> <span class="player-exp" id="lobby-exp-pct">0/100</span></div>
+                </div>
+            </div>
+            <div class="topbar-center" style="display:none;">
+                <div class="avatar-sparkle"></div>
+                <div class="avatar-ring"></div>
+                <canvas class="avatar-particle-canvas" id="avatar-particle-canvas"></canvas>
+                <div class="player-avatar-big" id="lobby-avatar-top" onclick="showFavoriteSelect()">
+                </div>
+            </div>
+            <div class="topbar-right">
+            </div>
+        </div>
+
+        <!-- 喜愛角色卡片（右上角獨立定位） -->
+        <div class="fav-card-wrap" id="fav-card-wrap" onclick="showFavoriteSelect()">
+            <div class="fav-card-shine"></div>
+            <div class="fav-card-sparks"><span></span><span></span><span></span><span></span></div>
+            <div class="fav-card-border"></div>
+            <img id="lobby-fav-img" src="角色卡牌/張邦勤.png" alt="avatar" class="fav-card-img">
+        </div>
+        <!-- 第二列資源 -->
+        <div class="lobby-topbar-row2">
+            <div class="resource-item stamina-res">
+                <span class="res-icon"><img src="其他圖示/體力圖示.png" alt="體力"></span>
+                <span class="res-value" id="stamina-display">50/50</span>
+            </div>
+            <div class="resource-item gem-res">
+                <span class="res-icon"><img src="其他圖示/鑽石圖示.png" alt="鑽石"></span>
+                <span class="res-value" id="gem-display">100</span>
+            </div>
+            <div class="resource-item cost-res">
+                <span class="res-icon"><img src="其他圖示/空間箱子圖示.png" alt="空間"></span>
+                <span class="res-value" id="cost-display">60</span>
+            </div>
+            <div class="resource-item gold-res">
+                <span class="res-icon"><img src="其他圖示/金幣圖示.png" alt="金幣"></span>
+                <span class="res-value" id="gold-display">990,000</span>
+            </div>
+        </div>
+
+        <!-- 主城視覺區域（五行塔背景 + 浮動入口） -->
+        <div class="lobby-visual">
+            <img class="lobby-tower-img" src="登入&主城/主城五行塔背景.png" alt="五行塔">
+            <canvas id="lobby-particles"></canvas>
+
+            <!-- 塔上浮動功能入口 -->
+            <div class="tower-entry" style="top:10%;left:10%;" onclick="showQuestCenter()">
+                <div class="tower-entry-icon">📋</div>
+                <div class="tower-entry-label">任務中心</div>
+                <div class="tower-entry-badge">!</div>
+            </div>
+            <div class="tower-entry" style="top:10%;right:10%;" onclick="showAdventureMenu()">
+                <div class="tower-entry-icon">⚔️</div>
+                <div class="tower-entry-label">冒險</div>
+            </div>
+
+
+            <audio id="bangqin-audio" src="角色音檔/張邦勤.mp3" preload="auto"></audio>
+            <!-- 每日加倍SSR展示 -->
+            <div class="lobby-rateup-banner" id="lobby-rateup-banner"></div>
+            <!-- BATTLE 按鈕 -->
+            <button class="battle-main-btn" onclick="enterMainQuest()">
+                <img src="其他圖示/BATTLE 按鈕圖示.png" alt="BATTLE" class="battle-btn-img">
+                <div class="battle-btn-shine"></div>
+                <div class="battle-btn-sparks">
+                    <span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="battle-inner">
+                    <div class="battle-stamina"><span id="battle-sta-num">50</span>/<span id="battle-sta-max">50</span></div>
+                    <div class="battle-sub" id="battle-sub-text">體力值已滿</div>
+                </div>
+            </button>
+            <!-- 張邦勤 NPC -->
+            <div class="npc-bangqin" onclick="openBangqinDialog()">
+                <div class="npc-bangqin-glow"></div>
+                <img src="角色卡牌/張邦勤.png" alt="張邦勤" class="npc-bangqin-img">
+                <div class="npc-bangqin-name">張邦勤</div>
+                <div class="npc-bangqin-bubble">♪</div>
+            </div>
+        </div>
+
+        <!-- 下方背景裝飾 -->
+        <div class="lobby-bottom-bg"></div>
+
+        <!-- 底部導航列 -->
+        <div class="lobby-navbar">
+            <button class="nav-btn" onclick="showTeamEdit()">
+                <span class="nav-icon"><img src="其他圖示/隊伍圖示.png" alt="隊伍"></span><span class="nav-label">隊伍</span>
+            </button>
+            <button class="nav-btn" onclick="showBag()">
+                <span class="nav-icon"><img src="其他圖示/背包圖示.png" alt="背包"></span><span class="nav-label">背包</span>
+            </button>
+            <button class="nav-btn" onclick="showGacha()">
+                <span class="nav-icon"><img src="其他圖示/召喚圖示.png" alt="召喚" class="nav-icon-gacha"></span><span class="nav-label">召喚</span>
+            </button>
+            <button class="nav-btn" onclick="showShop()">
+                <span class="nav-icon"><img src="其他圖示/商店圖示.png" alt="商店"></span><span class="nav-label">商店</span>
+            </button>
+            <button class="nav-btn" onclick="showSettings()">
+                <span class="nav-icon"><img src="其他圖示/設定圖示.png" alt="設定"></span><span class="nav-label">設定</span>
+            </button>
+        </div>
+        <!-- GM 測試按鈕 -->
+        <button onclick="gmCheat()" style="position:absolute;bottom:140px;left:4px;z-index:99;background:rgba(255,0,0,0.3);color:#f88;border:1px solid #f44;border-radius:6px;font-size:9px;padding:2px 6px;opacity:0.5;">GM</button>
+
+        <!-- 張邦勤對話框 -->
+        <div id="bangqin-dialog" class="bangqin-dialog hidden">
+            <div class="bangqin-dialog-panel">
+                <div class="bangqin-dialog-avatar">
+                    <img src="角色卡牌/張邦勤.png" alt="張邦勤">
+                </div>
+                <div class="bangqin-dialog-content">
+                    <div class="bangqin-dialog-name">🎵 張邦勤</div>
+                    <div class="bangqin-dialog-text" id="bangqin-text">嘿！召喚師，要聽我唱首歌嗎？還可以教你新手教學喔！</div>
+                    <div class="bangqin-dialog-btns">
+                        <button class="bangqin-btn bangqin-btn-play" id="bangqin-play-btn" onclick="toggleBangqinSong()">🎤 聽他唱歌</button>
+                        <button class="bangqin-btn bangqin-btn-tutorial" onclick="startBangqinTutorial()">📖 新手教學</button>
+                        <button class="bangqin-btn bangqin-btn-close" onclick="closeBangqinDialog()">離開</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 改名對話框 -->
+    <div id="rename-dialog" class="overlay hidden">
+        <div class="dialog-panel">
+            <div class="dialog-title">修改名稱</div>
+            <div class="dialog-divider"></div>
+            <input type="text" id="rename-input" class="dialog-input" maxlength="12" placeholder="輸入新名稱...">
+            <div class="dialog-buttons">
+                <button class="dialog-btn confirm-btn" onclick="confirmRename()">確定</button>
+                <button class="dialog-btn cancel-btn" onclick="closeRename()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 升等提示 -->
+    <div id="levelup-popup" class="levelup-popup hidden">
+        <div class="levelup-content">
+            <div class="levelup-title">🎉 召喚師升等！</div>
+            <div class="levelup-lv" id="levelup-lv">Lv. 2</div>
+            <div class="levelup-rewards" id="levelup-rewards"></div>
+            <button class="levelup-ok" onclick="closeLevelUp()">確認</button>
+        </div>
+    </div>
+
+    <!-- 主線故事選關 -->
+    <div id="story-screen" class="sub-screen hidden">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeSub('story-screen')">← 返回</button>
+            <div class="sub-title" id="story-screen-title">主線故事</div>
+            <div class="sub-gems"><img src="其他圖示/體力圖示.png" style="width:16px;height:16px;vertical-align:middle;margin-right:2px;"> <span id="story-stamina">50/50</span></div>
+        </div>
+        <!-- 章節列表 -->
+        <div id="story-chapter-list" class="story-chapters"></div>
+        <!-- 關卡列表（點章節後顯示） -->
+        <div id="story-stage-list" class="story-stages hidden"></div>
+    </div>
+
+    <!-- 故事對話畫面 -->
+    <div id="story-dialog-screen" class="hidden">
+        <div class="story-dialog-bg" id="story-dialog-bg"></div>
+        <div class="story-dialog-overlay"></div>
+        <div class="story-dialog-skip" onclick="skipStoryDialog()">SKIP ▶</div>
+        <div class="story-dialog-box" onclick="advanceStoryDialog()">
+            <div class="story-dialog-speaker" id="story-dialog-speaker"></div>
+            <div class="story-dialog-text" id="story-dialog-text"></div>
+            <div class="story-dialog-next">▼ 點擊繼續</div>
+        </div>
+    </div>
+
+    <!-- 抽卡系統 -->
+    <div id="gacha-screen" class="sub-screen hidden">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeSub('gacha-screen')">← 返回</button>
+            <div class="sub-title">五行召喚</div>
+            <div class="sub-gems"><img src="其他圖示/鑽石圖示.png" style="width:16px;height:16px;vertical-align:middle;"> <span id="gacha-gems">100</span></div>
+        </div>
+        <div class="gacha-banner">
+            <div class="gacha-banner-title">✦ 限定召喚 ✦</div>
+            <div class="gacha-banner-sub" id="gacha-banner-sub">五行神獸降臨！SSR機率UP</div>
+            <div class="gacha-cards-preview" id="gacha-preview"></div>
+        </div>
+        <div class="gacha-buttons">
+            <button class="gacha-pull-btn" onclick="doPull(1)">
+                <span class="pull-cost"><img src="其他圖示/鑽石圖示.png" style="width:14px;height:14px;vertical-align:middle;"> 5</span>
+                <span class="pull-label">單抽</span>
+            </button>
+            <button class="gacha-pull-btn gacha-pull-ten" onclick="doPull(10)">
+                <span class="pull-cost"><img src="其他圖示/鑽石圖示.png" style="width:14px;height:14px;vertical-align:middle;"> 50</span>
+                <span class="pull-label">十連抽</span>
+            </button>
+        </div>
+        <div class="gacha-pity-info" id="gacha-pity-info"></div>
+        <div class="gacha-result hidden" id="gacha-result">
+            <div class="gacha-result-cards" id="gacha-result-cards"></div>
+            <button class="gacha-ok-btn" onclick="closeGachaResult()">確認</button>
+        </div>
+    </div>
+
+    <!-- 商城 -->
+    <div id="shop-screen" class="sub-screen hidden">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeSub('shop-screen')">← 返回</button>
+            <div class="sub-title">商城</div>
+            <div class="sub-gems"><img src="其他圖示/鑽石圖示.png" class="topbar-res-img"> <span id="shop-gems">100</span> <img src="其他圖示/金幣圖示.png" class="topbar-res-img"> <span id="shop-gold">990,000</span></div>
+        </div>
+        <div class="shop-grid" id="shop-grid"></div>
+    </div>
+
+    <!-- 背包 -->
+    <div id="bag-screen" class="sub-screen hidden">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeSub('bag-screen')">← 返回</button>
+            <div class="sub-title">召喚獸背包</div>
+            <div class="sub-gems"><img src="其他圖示/背包圖示.png" style="width:20px;height:20px;object-fit:contain;vertical-align:middle;"> <span id="bag-count">0</span>/125</div>
+        </div>
+        <div class="bag-info-bar">
+            <div class="bag-info-item"><img src="其他圖示/金幣圖示.png" class="topbar-res-img"> <span id="bag-gold">990,000</span></div>
+            <div class="bag-info-item bag-sort-btn" id="bag-sort-btn" onclick="cycleBagSort()"><img src="其他圖示/排序圖示.png" class="topbar-res-img" id="bag-sort-icon"> 入手時間</div>
+        </div>
+        <div class="bag-tabs">
+            <button class="bag-tab active" onclick="switchBagTab('cards',this)">角色</button>
+            <button class="bag-tab" onclick="switchBagTab('items',this)">素材</button>
+            <button class="bag-tab bag-sell-toggle" id="bag-sell-toggle" onclick="toggleBatchSellMode()">批量販售</button>
+        </div>
+        <div class="bag-grid" id="bag-grid"></div>
+        <div class="bag-batch-bar hidden" id="bag-batch-bar">
+            <div class="bag-batch-info" id="bag-batch-info">已選 0 張</div>
+            <div class="bag-batch-btns">
+                <button class="bag-batch-btn bag-batch-cancel" onclick="cancelBatchSell()">取消</button>
+                <button class="bag-batch-btn bag-batch-confirm" id="bag-batch-confirm" onclick="doBatchSell()" disabled>確定販售</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 角色卡牌詳情 -->
+    <div id="card-detail-screen" class="sub-screen hidden">
+        <canvas id="cd-particles" class="cd-particle-canvas"></canvas>
+        <div class="cd-top-bar">
+            <button class="back-btn" onclick="closeCardDetail()">← 返回</button>
+            <div class="cd-top-title" id="cd-title"></div>
+            <div class="card-detail-stars" id="cd-stars"></div>
+        </div>
+        <div class="card-detail-scroll">
+            <div class="card-detail-top">
+                <div class="card-detail-img-wrap" id="cd-img-wrap">
+                    <img id="cd-img" class="card-detail-img" src="" alt="">
+                    <div class="cd-img-overlay" id="cd-img-overlay"></div>
+                    <div class="cd-rarity-glow" id="cd-rarity-glow"></div>
+                    <div class="cd-shimmer"></div>
+                    <div class="card-detail-element" id="cd-element"></div>
+                </div>
+                <div class="card-detail-level">
+                    Lv. <span class="cd-lv" id="cd-lv">1</span> / <span id="cd-maxlv">99</span>
+                    <span class="cd-grade-bonus" id="cd-grade-bonus" style="display:none;"></span>
+                </div>
+                <div class="card-detail-stats">
+                    <div class="cd-stat"><span class="cd-stat-icon"><img src="其他圖示/生命力圖示（64×64）.png" class="cd-stat-img"></span> 生命力 <span class="cd-stat-val" id="cd-hp">0</span></div>
+                    <div class="cd-stat"><span class="cd-stat-icon"><img src="其他圖示/攻擊力圖示（64×64）.png" class="cd-stat-img"></span> 攻擊力 <span class="cd-stat-val" id="cd-atk">0</span></div>
+                    <div class="cd-stat"><span class="cd-stat-icon"><img src="其他圖示/回復力圖示（64×64）.png" class="cd-stat-img"></span> 回復力 <span class="cd-stat-val" id="cd-rcv">0</span></div>
+                    <div class="cd-stat"><span class="cd-stat-icon" id="cd-race-icon"></span> <span id="cd-race">人類</span> <span class="cd-stat-sub">空間 <span id="cd-cost">0</span></span></div>
+                </div>
+                <!-- 強化按鈕 -->
+                <div class="cd-enhance-bar">
+                    <button class="cd-enhance-btn cd-lvup-btn" id="cd-lvup-btn" onclick="doLevelUp()">
+                        <span class="cd-enhance-label">強化等級</span>
+                        <span class="cd-enhance-sub" id="cd-lvup-cost"></span>
+                    </button>
+                    <button class="cd-enhance-btn cd-grade-btn" id="cd-grade-btn" onclick="doEnhanceGrade()">
+                        <span class="cd-enhance-label">強化數值</span>
+                        <span class="cd-enhance-sub" id="cd-grade-info"></span>
+                    </button>
+                </div>
+                <div class="cd-enhance-bar">
+                    <button class="cd-enhance-btn cd-fav-btn" id="cd-fav-btn" onclick="toggleCardLock()">
+                        <span class="cd-enhance-label" id="cd-fav-label">加入最愛</span>
+                        <span class="cd-enhance-sub" id="cd-fav-info">鎖定後無法販售</span>
+                    </button>
+                    <button class="cd-enhance-btn cd-sell-btn" id="cd-sell-btn" onclick="doSellCard()">
+                        <span class="cd-enhance-label">販售卡片</span>
+                        <span class="cd-enhance-sub" id="cd-sell-info"></span>
+                    </button>
+                </div>
+            </div>
+            <div class="card-detail-skills">
+                <div class="cd-skill-tabs">
+                    <button class="cd-skill-tab active" onclick="switchSkillTab('active',this)">主動技</button>
+                    <button class="cd-skill-tab" onclick="switchSkillTab('leader',this)">隊長技</button>
+                    <button class="cd-skill-tab" onclick="switchSkillTab('team',this)">隊伍技</button>
+                    <button class="cd-skill-tab" onclick="switchSkillTab('bond',this)">羈絆</button>
+                </div>
+                <div class="cd-skill-content" id="cd-skill-content"></div>
+            </div>
+            <div class="card-detail-id" id="cd-id"></div>
+        </div>
+    </div>
+
+    <!-- 每日任務 -->
+    <div id="daily-screen" class="sub-screen hidden">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeSub('daily-screen')">← 返回</button>
+            <div class="sub-title">每日任務</div>
+            <div></div>
+        </div>
+        <div class="daily-list" id="daily-list"></div>
+    </div>
+
+    <!-- 戰鬥畫面 -->
+    <div id="battle-screen">
+        <!-- 戰鬥背景 -->
+        <img id="battle-bg" class="battle-bg" src="" alt="">
+
+        <!-- 頂部：關卡資訊 + 退出按鈕 -->
+        <div id="battle-topbar">
+            <button id="battle-exit-btn" onclick="confirmExitBattle()">✕</button>
+            <div id="stage-info">第 1 關</div>
+            <div id="battle-turn-count"></div>
+        </div>
+
+        <!-- 敵人區域（大圖） -->
+        <div id="enemy-area">
+            <div id="enemy-showcase">
+                <div id="enemy-aura"></div>
+                <div id="enemy-platform"></div>
+                <div id="enemy-sprite"><img src="" alt="" class="enemy-img"></div>
+                <div id="enemy-shadow"></div>
+            </div>
+            <div id="enemy-name">哥布林</div>
+            <div id="enemy-hp-bar">
+                <div id="enemy-hp-fill"></div>
+                <div id="enemy-hp-text"></div>
+            </div>
+            <div id="enemy-cd">攻擊倒數 🔴🔴🔴 <span class="cd-num">3</span></div>
+        </div>
+
+        <!-- 敵人技能公告 -->
+        <div id="enemy-skill-announce" class="enemy-skill-announce">
+            <div class="esk-inner">
+                <div class="esk-name"></div>
+                <div class="esk-desc"></div>
+            </div>
+        </div>
+
+        <!-- 中間：隊伍血量 + 增益 + 隊伍卡牌 -->
+        <div id="team-hp-area">
+            <div id="team-hp-bar">
+                <div id="team-hp-fill"></div>
+                <div id="team-hp-text"></div>
+            </div>
+        </div>
+        <div id="buff-bar"></div>
+        <div id="team-area"></div>
+
+        <!-- 底部：轉珠盤面 -->
+        <div id="board-area">
+            <canvas id="board-canvas"></canvas>
+        </div>
+
+        <!-- 傷害顯示 -->
+        <div id="damage-display"></div>
+        <!-- combo 顯示 -->
+        <div id="combo-display"></div>
+    </div>
+
+    <!-- 技能確認對話框 -->
+    <div id="skill-confirm-dialog" class="overlay hidden">
+        <div class="skill-confirm-panel">
+            <div class="skill-confirm-icon" id="skill-confirm-icon"></div>
+            <div class="skill-confirm-name" id="skill-confirm-name"></div>
+            <div class="skill-confirm-desc" id="skill-confirm-desc"></div>
+            <div class="skill-confirm-btns">
+                <button class="skill-confirm-yes" onclick="confirmSkillUse()">發動</button>
+                <button class="skill-confirm-no" onclick="cancelSkillUse()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 退出戰鬥確認 -->
+    <div id="exit-battle-dialog" class="overlay hidden">
+        <div class="dialog-panel">
+            <div class="dialog-title">退出戰鬥</div>
+            <div class="dialog-divider"></div>
+            <div style="font-size:13px;color:#ccc;text-align:center;margin-bottom:16px;line-height:1.8;">確定要退出戰鬥嗎？<br>本次戰鬥進度將不會保存</div>
+            <div class="dialog-buttons">
+                <button class="dialog-btn confirm-btn" onclick="doExitBattle()">確定退出</button>
+                <button class="dialog-btn cancel-btn" onclick="cancelExitBattle()">繼續戰鬥</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 故事序章（新手首次進入） -->
+    <div id="prologue-screen" class="hidden">
+        <div class="prologue-bg"></div>
+        <div class="prologue-overlay"></div>
+        <div class="prologue-content">
+            <div class="prologue-text" id="prologue-text"></div>
+        </div>
+        <div class="prologue-skip" onclick="skipPrologue()">SKIP ▶</div>
+    </div>
+
+    <!-- 抽卡演出畫面 -->
+    <div id="gacha-anim-screen" class="hidden">
+        <canvas id="gacha-anim-canvas"></canvas>
+        <div id="gacha-door-wrap">
+            <div id="gacha-door-left" class="gacha-door"></div>
+            <div id="gacha-door-right" class="gacha-door"></div>
+        </div>
+        <div id="gacha-card-stage">
+            <div id="gacha-card-reveal"></div>
+            <div id="gacha-card-name"></div>
+            <div id="gacha-card-rarity"></div>
+        </div>
+        <div id="gacha-pull-hint">點擊螢幕開啟</div>
+        <div id="gacha-counter"></div>
+        <div id="gacha-anim-reveal" class="hidden">
+            <div id="gacha-reveal-cards"></div>
+            <button class="gacha-ok-btn" onclick="closeGachaAnim()">確認</button>
+        </div>
+        <button id="gacha-skip-btn" class="hidden" onclick="skipToGachaResult()">跳過</button>
+    </div>
+
+    <!-- 販售確認對話框 -->
+    <div id="sell-confirm-dialog" class="overlay hidden">
+        <div class="dialog-panel sell-confirm-panel">
+            <div class="dialog-title">販售確認</div>
+            <div class="dialog-divider"></div>
+            <div class="sell-confirm-card" id="sell-confirm-card"></div>
+            <div class="sell-confirm-reward" id="sell-confirm-reward"></div>
+            <div class="dialog-buttons">
+                <button class="dialog-btn confirm-btn" onclick="confirmSellCard()">確定販售</button>
+                <button class="dialog-btn cancel-btn" onclick="cancelSellCard()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 勝利/失敗畫面 -->
+    <div id="result-screen"></div>
+</div>
+
+<script src="game.js"></script>
+<script src="lobby.js"></script>
+</body>
+</html>
