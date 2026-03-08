@@ -972,6 +972,7 @@ const ENEMIES = [
 let board = [];
 let team = [];
 let teamMaxHp = 0, teamHp = 0;
+let teamBaseRcv = 0;
 let currentStage = 0;
 let enemy = null, enemyHp = 0, enemyMaxHp = 0, enemyCd = 0, enemyMaxCd = 0;
 let isDragging = false, dragOrb = null, dragPath = [];
@@ -985,6 +986,12 @@ let isRoguelike = false; // 是否為輪迴挑戰模式
 let roguelikeEnemies = []; // 輪迴挑戰的敵人列表
 let roguelikeFloor = 0; // 當前層數
 let roguelikeTotalFloors = 50; // 總層數
+let isPvpBattle = false; // 是否為 PVP 轉珠戰鬥模式
+let pvpEnemyList = []; // PVP 3 關敵人列表
+let pvpCurrentStage = 0; // PVP 目前第幾關 (0-2)
+let pvpStagesCleared = 0; // PVP 已通關幾關
+let pvpTotalDamageDealt = 0; // PVP 累積傷害
+let pvpHpPercent = 100; // PVP 結束時剩餘 HP%
 
 // 技能系統狀態
 let skillCooldowns = []; // 每個隊員的當前CD
@@ -993,6 +1000,14 @@ let enemyBuffs = []; // 敵人增益
 let turnCount = 0;
 let orbShimmerPhase = 0; // 珠子閃光動畫相位
 let boardAnimId = null; // 盤面動畫循環
+
+function pvpAppendOverhealLogSafe(overheal) {
+    try {
+        if (window.pvpAppendLog && typeof window.pvpAppendLog === 'function') {
+            window.pvpAppendLog(`溢補轉傷害：${overheal}`);
+        }
+    } catch (e) {}
+}
 
 // 戰鬥粒子特效
 let battleParticles = [];
@@ -1300,13 +1315,34 @@ function hideNameDialog() {
     setTimeout(()=>{document.getElementById('name-dialog').classList.add('hidden'); document.getElementById('login-menu').classList.remove('hidden');
         setTimeout(()=>overlay.classList.remove('active'),100);},500);
 }
-function quickGuestStart() {
+async function quickGuestStart() {
+    try {
+        if (window.firebaseAuth && window.firebaseAuth.currentUser) {
+            await window.firebaseAuth.signOut();
+        }
+    } catch (e) {}
+    localStorage.removeItem('caitiankm_save_v2');
+    localStorage.removeItem('caitiankm_starter_done');
+    localStorage.removeItem('caitiankm_prologue_done');
+    localStorage.removeItem('caitiankm_force_login');
+    hasSaveData = false;
+    playerName = '';
     tryStart();
 }
-function tryStart() {
+async function tryStart() {
     const check=document.getElementById('agree-check'), warning=document.getElementById('agree-warning');
     if(!check.checked){warning.textContent='⚠ 請先勾選同意使用者條款'; check.parentElement.style.animation='headShake 0.5s';
-        setTimeout(()=>check.parentElement.style.animation='',500); SFX.play('error'); return;} warning.textContent=''; SFX.play('confirm'); showNameDialog();
+        setTimeout(()=>check.parentElement.style.animation='',500); SFX.play('error'); return;} warning.textContent='';
+    // 清除舊資料，確保走初始角色選擇流程
+    try { if (window.firebaseAuth && window.firebaseAuth.currentUser) await window.firebaseAuth.signOut(); } catch(e){}
+    localStorage.removeItem('caitiankm_save_v2');
+    localStorage.removeItem('caitiankm_starter_done');
+    localStorage.removeItem('caitiankm_prologue_done');
+    localStorage.removeItem('caitiankm_force_login');
+    hasSaveData = false;
+    playerName = '';
+    ownedCards = [];
+    SFX.play('confirm'); showNameDialog();
 }
 const TERMS = {
     privacy:{title:'私隱條款',content:`<p>CaiTianKaiMen 非常重視您的隱私權。</p><p><b>1. 資料收集</b><br>本遊戲可能收集您的暱稱、裝置資訊及遊戲進度等資料。</p><p><b>2. 資料使用</b><br>所收集之資料僅用於遊戲營運。</p><p><b>3. 資料保護</b><br>我們採用業界標準的加密技術保護您的個人資料。</p><p><b>4. 第三方分享</b><br>除法律要求外，不會分享給第三方。</p><p><b>5. 條款修改</b><br>本遊戲保留隨時修改本條款之權利。</p>`},
@@ -1516,6 +1552,7 @@ function startBattle() {
     team = teamSlots.filter(idx => idx >= 0).map(idx => ownedCards[idx] || ownedCards[0]);
     if (team.length === 0) team = [ownedCards[0] || CHARACTERS[0]];
     teamMaxHp = team.reduce((s,c)=>s+c.hp, 0);
+    teamBaseRcv = team.reduce((s,c)=>s+(c.rcv||0), 0);
     teamHp = teamMaxHp;
     currentStage = 0;
     turnCount = 0;
@@ -1592,6 +1629,7 @@ function startRoguelike() {
     team = teamSlots.filter(idx => idx >= 0).map(idx => ownedCards[idx] || ownedCards[0]);
     if (team.length === 0) team = [ownedCards[0] || CHARACTERS[0]];
     teamMaxHp = team.reduce((s,c)=>s+c.hp, 0);
+    teamBaseRcv = team.reduce((s,c)=>s+(c.rcv||0), 0);
     teamHp = teamMaxHp;
     currentStage = 0;
     turnCount = 0;
@@ -1619,9 +1657,119 @@ function startRoguelike() {
     SFX.startBGM('battle');
 }
 
+// ===== PVP 轉珠戰鬥 =====
+function startPvpBattle(enemyList) {
+    isPvpBattle = true;
+    isStoryBattle = false;
+    isRoguelike = false;
+    pvpEnemyList = enemyList; // [{name,element,img,hp,atk,cd,skills}, ...]
+    pvpCurrentStage = 0;
+    pvpStagesCleared = 0;
+    pvpTotalDamageDealt = 0;
+
+    team = teamSlots.filter(idx => idx >= 0).map(idx => ownedCards[idx] || ownedCards[0]);
+    if (team.length === 0) team = [ownedCards[0] || CHARACTERS[0]];
+    teamMaxHp = team.reduce((s, c) => s + c.hp, 0);
+    teamBaseRcv = team.reduce((s, c) => s + (c.rcv || 0), 0);
+    teamHp = teamMaxHp;
+    currentStage = 0;
+    turnCount = 0;
+    activeBuffs = [];
+    enemyBuffs = [];
+    battleParticles = [];
+    skillCooldowns = team.map(c => c.activeSkill.cd);
+
+    if (typeof lobbyParticleId !== 'undefined' && lobbyParticleId) { cancelAnimationFrame(lobbyParticleId); lobbyParticleId = null; }
+    if (typeof avatarParticleId !== 'undefined' && avatarParticleId) { cancelAnimationFrame(avatarParticleId); avatarParticleId = null; }
+    if (typeof battleWaveId !== 'undefined' && battleWaveId) { cancelAnimationFrame(battleWaveId); battleWaveId = null; }
+
+    document.getElementById('lobby-screen').classList.remove('show');
+    document.getElementById('battle-screen').style.display = 'flex';
+    document.getElementById('result-screen').classList.remove('show');
+
+    const battleBg = document.getElementById('battle-bg');
+    if (battleBg) battleBg.src = BATTLE_BGS[Math.floor(Math.random() * BATTLE_BGS.length)];
+
+    initCanvas();
+    renderTeam();
+    loadPvpStage();
+    startBoardAnimation();
+    SFX.startBGM('battle');
+}
+
+function loadPvpStage() {
+    if (pvpCurrentStage >= pvpEnemyList.length) {
+        pvpFinishBattle(true);
+        return;
+    }
+    const e = pvpEnemyList[pvpCurrentStage];
+    enemy = JSON.parse(JSON.stringify(e));
+    enemyMaxHp = e.hp;
+    enemyHp = e.hp;
+    enemyCd = e.cd || 3;
+    enemyMaxCd = e.cd || 3;
+    enemyBuffs = [];
+
+    const stageLabel = pvpCurrentStage < 2 ? `野怪 ${pvpCurrentStage + 1}` : 'BOSS';
+    document.getElementById('stage-info').textContent = `PVP 第 ${pvpCurrentStage + 1} 關 (${stageLabel})`;
+    const spriteEl = document.getElementById('enemy-sprite');
+    spriteEl.innerHTML = `<img src="${e.img}" alt="${e.name}" class="enemy-img">`;
+    document.getElementById('enemy-name').textContent = `【${ELEMENTS[e.element]?.name || ''}】${e.name}`;
+    updateEnemyHp();
+    updateEnemyCd();
+    updateTeamHp();
+    generateBoard();
+    drawBoard();
+    playEnemyEntrance();
+}
+
+function pvpFinishBattle(win) {
+    pvpStagesCleared = win ? pvpEnemyList.length : pvpCurrentStage;
+    pvpHpPercent = Math.max(0, Math.floor((teamHp / teamMaxHp) * 100));
+    stopBoardAnimation();
+    SFX.stopBGM();
+
+    const screen = document.getElementById('result-screen');
+    screen.classList.add('show');
+    SFX.play(win ? 'victory' : 'defeat');
+
+    const stagesText = `${pvpStagesCleared} / ${pvpEnemyList.length}`;
+    screen.innerHTML = `
+        <div class="result-overlay${win ? '' : ' fail'}">
+            <div class="result-header">PVP 戰鬥結果</div>
+            <div class="result-divider">◆ ${win ? '全關卡通過' : '挑戰失敗'} ◆</div>
+            <div class="result-complete${win ? '' : ' fail-text'}">${win ? 'Complete' : 'Failed'}</div>
+            <div class="result-rewards">
+                <div class="reward-row"><span class="reward-label">通過關卡</span><span class="reward-val">${stagesText}</span></div>
+                <div class="reward-row"><span class="reward-label">剩餘 HP</span><span class="reward-val">${pvpHpPercent}%</span></div>
+                <div class="reward-row"><span class="reward-label">累積傷害</span><span class="reward-val">${pvpTotalDamageDealt.toLocaleString()}</span></div>
+            </div>
+            <div style="color:#aaa;font-size:12px;margin-top:12px;">等待對手完成戰鬥，結算積分中…</div>
+            <div class="result-buttons">
+                <button class="result-btn-back" onclick="pvpReturnToLobby()">返回大廳</button>
+            </div>
+        </div>`;
+
+    // 報告結果到 Firebase
+    if (typeof pvpReportBattleResult === 'function') {
+        pvpReportBattleResult(pvpStagesCleared, pvpHpPercent, pvpTotalDamageDealt);
+    }
+}
+
+function pvpReturnToLobby() {
+    isPvpBattle = false;
+    pvpEnemyList = [];
+    stopBoardAnimation();
+    document.getElementById('result-screen').classList.remove('show');
+    document.getElementById('battle-screen').style.display = 'none';
+    enterLobby();
+}
+
 function restartGame() {
     isRoguelike = false;
+    isPvpBattle = false;
     roguelikeEnemies = [];
+    pvpEnemyList = [];
     stopBoardAnimation();
     SFX.stopBGM();
     document.getElementById('result-screen').classList.remove('show');
@@ -2066,7 +2214,9 @@ async function resolveBoard() {
         let elementDamages = {}; // 按屬性統計傷害
         for (const g of allGroups) {
             if (g.type === 'heal') {
-                totalHeal += 300 * g.count;
+                const healFromOrb = 300 * g.count;
+                const healFromRcv = Math.floor((teamBaseRcv || 0) * 0.35 * g.count);
+                totalHeal += healFromOrb + healFromRcv;
             } else {
                 const dmg = calcDamage(g.type, g.count, totalCombo);
                 totalDamage += dmg;
@@ -2097,13 +2247,33 @@ async function resolveBoard() {
         trackDailyOrbs(totalOrbsCleared);
         renderBuffBar();
 
-        // 回血
+        // 回血（含溢補傷害）
         if (totalHeal > 0) {
-            teamHp = Math.min(teamMaxHp, teamHp + totalHeal);
-            animateHpBar('team', totalHeal, true);
-            showFloatingText('+' + totalHeal.toLocaleString(), '#7bed9f', 'team');
-            SFX.play('heal');
-            await sleep(400);
+            const healWithRcv = Math.floor(totalHeal * getLeaderRcvMultiplier());
+            const missingHp = Math.max(0, teamMaxHp - teamHp);
+            const actualHeal = Math.min(missingHp, healWithRcv);
+            const overHeal = Math.max(0, healWithRcv - actualHeal);
+
+            if (actualHeal > 0) {
+                teamHp = Math.min(teamMaxHp, teamHp + actualHeal);
+                updateTeamHp();
+                animateHpBar('team', actualHeal, true);
+                showFloatingText('+' + actualHeal.toLocaleString(), '#7bed9f', 'team');
+                SFX.play('heal');
+                await sleep(250);
+            }
+
+            if (overHeal > 0 && hasOverhealLeaderEnabled()) {
+                teamHp = teamMaxHp;
+                updateTeamHp();
+                showFloatingText(`溢補 ${overHeal.toLocaleString()}`, '#9ad1ff', 'team');
+                enemyHp = Math.max(0, enemyHp - overHeal);
+                updateEnemyHp();
+                animateHpBar('enemy', overHeal, false);
+                showDamage(overHeal);
+                pvpAppendOverhealLogSafe(overHeal);
+                await sleep(250);
+            }
         }
 
         // 對敵人造成傷害
@@ -2119,6 +2289,7 @@ async function resolveBoard() {
             showDamage(totalDamage);
             spawnDamageParticles(totalDamage);
             enemyHp = Math.max(0, enemyHp - totalDamage);
+            if (isPvpBattle) pvpTotalDamageDealt += totalDamage;
             updateEnemyHp();
             animateHpBar('enemy', totalDamage, false);
             hitEnemy();
@@ -2140,7 +2311,16 @@ async function resolveBoard() {
         // 敵人死亡？
         if (enemyHp <= 0) {
             await showEnemyDeath();
-            if (isRoguelike) {
+            if (isPvpBattle) {
+                pvpCurrentStage++;
+                if (pvpCurrentStage >= pvpEnemyList.length) { pvpFinishBattle(true); }
+                else {
+                    teamHp = Math.min(teamMaxHp, teamHp + Math.floor(teamMaxHp * 0.15));
+                    updateTeamHp();
+                    showFloatingText('+15% HP', '#7bed9f', 'team');
+                    loadPvpStage();
+                }
+            } else if (isRoguelike) {
                 currentStage++;
                 if (currentStage >= roguelikeEnemies.length) { showRoguelikeResult(true); }
                 else {
@@ -2175,7 +2355,8 @@ async function resolveBoard() {
 
         // 玩家死亡？
         if (teamHp <= 0) {
-            if (isRoguelike) { showRoguelikeResult(false); }
+            if (isPvpBattle) { pvpFinishBattle(false); }
+            else if (isRoguelike) { showRoguelikeResult(false); }
             else { showResult(false); }
             animating = false; return;
         }
@@ -2225,20 +2406,31 @@ function calcDamage(orbType, orbCount, combo) {
 
 // 隊長技倍率計算（加法制：1 + 隊長% + 戰友%）
 // 讀取 leaderSkill.mult 陣列中 stat==='atk' 的 pct
-function getLeaderSkillMultiplier(orbType) {
+function getLeaderSkillStatBonus(stat, orbType = null) {
     let totalPct = 0;
-    // 隊長（slot 0）
     if (team[0] && team[0].leaderSkill && team[0].leaderSkill.mult) {
         for (const m of team[0].leaderSkill.mult) {
-            if (m.stat !== 'atk') continue;
-            if (m.type === 'all' || (m.type === 'element' && m.element === orbType)) {
+            if (m.stat !== stat) continue;
+            if (m.type === 'all') {
                 totalPct += m.pct;
+            } else if (m.type === 'element') {
+                if (!orbType || m.element === orbType) totalPct += m.pct;
             }
         }
     }
-    // 戰友（slot 最後一位，模擬好友隊長）— 暫用隊長自身
-    // 未來可加好友系統，目前隊長技只算一次
-    return 1 + totalPct;
+    return totalPct;
+}
+
+function getLeaderSkillMultiplier(orbType) {
+    return 1 + getLeaderSkillStatBonus('atk', orbType);
+}
+
+function getLeaderRcvMultiplier() {
+    return 1 + getLeaderSkillStatBonus('rcv', null);
+}
+
+function hasOverhealLeaderEnabled() {
+    return getLeaderSkillStatBonus('rcv', null) > 0;
 }
 
 // 隊伍技倍率（目前不額外乘法，已整合到領袖區）
@@ -2510,6 +2702,7 @@ async function enemyAttack() {
         let dmg = enemy.atk;
         const defBuff = activeBuffs.find(b => b.type === 'defUp');
         if (defBuff) dmg = Math.floor(dmg * (1 - defBuff.value));
+        dmg = Math.max(1, dmg);
 
         teamHp = Math.max(0, teamHp - dmg);
         animateHpBar('team', dmg, false);
@@ -2820,7 +3013,16 @@ function executeSkill(idx) {
     setTimeout(async () => {
         if (enemyHp <= 0) {
             await showEnemyDeath();
-            if (isRoguelike) {
+            if (isPvpBattle) {
+                pvpCurrentStage++;
+                if (pvpCurrentStage >= pvpEnemyList.length) { pvpFinishBattle(true); }
+                else {
+                    teamHp = Math.min(teamMaxHp, teamHp + Math.floor(teamMaxHp * 0.15));
+                    updateTeamHp();
+                    showFloatingText('+15% HP', '#7bed9f', 'team');
+                    loadPvpStage();
+                }
+            } else if (isRoguelike) {
                 currentStage++;
                 if (currentStage >= roguelikeEnemies.length) { showRoguelikeResult(true); }
                 else {
@@ -3386,4 +3588,6 @@ window.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
+});
+
 });

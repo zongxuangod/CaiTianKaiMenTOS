@@ -1179,6 +1179,7 @@ function launchStoryBattle(ci, si, st) {
     team = teamSlots.filter(idx => idx >= 0).map(idx => allCards[idx] || ownedCards[0]);
     if (team.length === 0) team = [ownedCards[0] || CHARACTERS[0]];
     teamMaxHp = team.reduce((s, c) => s + c.hp, 0);
+    teamBaseRcv = team.reduce((s, c) => s + (c.rcv || 0), 0);
     teamHp = teamMaxHp;
     currentStage = st.enemyIdx;
     turnCount = 0;
@@ -3434,10 +3435,14 @@ function showSettings() {
     html += '</div>';
 
     // 帳號資訊
+    const authUser = window.getCurrentUser ? window.getCurrentUser() : null;
+    const bindText = authUser ? `已綁定（${authUser.email || authUser.uid}）` : '未綁定（訪客模式）';
+    const bindColor = authUser ? '#7bed9f' : '#ffb37a';
     html += `<div style="background:linear-gradient(135deg,rgba(18,22,45,0.95),rgba(12,14,30,0.98));border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px;">`;
     html += `<div style="font-size:14px;font-weight:bold;color:#eee;letter-spacing:2px;margin-bottom:12px;">👤 帳號資訊</div>`;
     html += `<div style="font-size:11px;color:#888;line-height:2;">`;
     html += `召喚師名稱：<span style="color:#ffd700;">${playerName || '未設定'}</span><br>`;
+    html += `帳號綁定：<span style="color:${bindColor};">${bindText}</span><br>`;
     html += `召喚師等級：<span style="color:#64c8ff;">Lv.${summonerLv}</span><br>`;
     html += `擁有角色數：<span style="color:#7bed9f;">${ownedCards.length}</span><br>`;
     html += `體力藥水：<span style="color:#ff6b9d;"><img src="其他圖示/體力圖示.png" style="width:14px;height:14px;vertical-align:middle;"> ×${staminaPotions}</span>`;
@@ -4034,6 +4039,40 @@ const PVP_STAGE_TEMPLATES = [
     { name: '深淵龍王', hp: 200, atkMin: 12, atkMax: 22 },
 ];
 
+// 用真實 ENEMIES 建立 PVP 3 關敵人清單（2野怪 + 1 BOSS）
+function pvpBuildRealEnemies(scale) {
+    const normalPool = ENEMIES.filter(e => !e.img.includes('BOSS'));
+    const bossPool = ENEMIES.filter(e => e.img.includes('BOSS'));
+    const result = [];
+    const usedIdx = new Set();
+    // 2 隻野怪
+    for (let i = 0; i < 2; i++) {
+        let idx;
+        do { idx = Math.floor(Math.random() * normalPool.length); } while (usedIdx.has(idx) && usedIdx.size < normalPool.length);
+        usedIdx.add(idx);
+        const base = normalPool[idx];
+        const e = JSON.parse(JSON.stringify(base));
+        e.hp = Math.floor(e.hp * scale);
+        e.atk = Math.floor(e.atk * scale);
+        result.push(e);
+    }
+    // 1 BOSS
+    if (bossPool.length > 0) {
+        const base = bossPool[Math.floor(Math.random() * bossPool.length)];
+        const e = JSON.parse(JSON.stringify(base));
+        e.hp = Math.floor(e.hp * scale * 1.3);
+        e.atk = Math.floor(e.atk * scale * 1.2);
+        result.push(e);
+    } else {
+        const base = normalPool[Math.floor(Math.random() * normalPool.length)];
+        const e = JSON.parse(JSON.stringify(base));
+        e.hp = Math.floor(e.hp * scale * 1.5);
+        e.atk = Math.floor(e.atk * scale * 1.3);
+        result.push(e);
+    }
+    return result;
+}
+
 const PVP_RATING_REWARDS = [
     { score: 100, reward: { gems: 30, gold: 3000 } },
     { score: 300, reward: { gems: 50, gold: 6000 } },
@@ -4087,6 +4126,8 @@ function pvpCalcDifficultyScale(avgRating) {
     if (avgRating >= 300) return 1.2;
     return 1;
 }
+
+let pvpBattleSeed = 0; // 隨機種子，確保雙方打同一組敵人
 
 function pvpBuildStagesByScale(scale) {
     return PVP_STAGE_TEMPLATES.map((x, i) => ({
@@ -4271,12 +4312,12 @@ function makeRoomCode() {
 
 function pvpInitBattleState() {
     pvpBattleState = {
-        hp: { host: 100, guest: 100 },
-        turn: 'host',
         started: false,
         winner: null,
         hostReady: false,
         guestReady: false,
+        hostResult: null, // { stagesCleared, hpPercent, totalDamage, finished }
+        guestResult: null,
         disconnect: {
             hostCount: 0,
             guestCount: 0,
@@ -4422,9 +4463,6 @@ async function pvpCreateRoom() {
 
     const hostRating = await pvpGetUserRating(me.uid);
     pvpMyRating = hostRating;
-    const scale = pvpCalcDifficultyScale(hostRating);
-    pvpBattleState.stages = pvpBuildStagesByScale(scale);
-    pvpBattleState.currentStage = 1;
 
     await pvpRoomsCollection().doc(pvpRoomCode).set({
         code: pvpRoomCode,
@@ -4495,10 +4533,6 @@ async function pvpJoinRoom() {
 
     const guestRating = await pvpGetUserRating(me.uid);
     pvpMyRating = guestRating;
-    const hostRating = clampPvpRating(data.hostRating || 0);
-    const avgRating = Math.floor((hostRating + guestRating) / 2);
-    const scale = pvpCalcDifficultyScale(avgRating);
-    const stages = pvpBuildStagesByScale(scale);
 
     await ref.set({
         guestUid: me.uid,
@@ -4508,8 +4542,6 @@ async function pvpJoinRoom() {
         guestLastSeenTs: Date.now(),
         battleState: {
             ...(data.battleState || pvpBattleState || {}),
-            stages,
-            currentStage: 1,
             ratingSettled: false,
         },
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -4545,6 +4577,23 @@ function pvpSubscribeRoom() {
             setPvpStatus('房主已離開，房間已關閉');
         }
 
+        // 對方已準備好且我也準備好 → 自動進入戰鬥
+        if (pvpBattleState.started && !isPvpBattle && !pvpBattleState.winner) {
+            const myResult = pvpMyRole === 'host' ? pvpBattleState.hostResult : pvpBattleState.guestResult;
+            if (!myResult?.finished) {
+                pvpLaunchRealBattle();
+            }
+        }
+
+        // 對手完成戰鬥 → 檢查是否雙方都完成
+        if (pvpBattleState.hostResult?.finished && pvpBattleState.guestResult?.finished && !pvpBattleState.winner) {
+            pvpCheckBothFinished();
+        }
+        // 對方已判出勝負 → 顯示結果
+        if (pvpBattleState.winner && pvpBattleState.hostResult?.finished && pvpBattleState.guestResult?.finished) {
+            pvpShowFinalResult();
+        }
+
         renderPvpRoom();
     });
 }
@@ -4566,47 +4615,108 @@ async function pvpReady() {
 
     if (pvpBattleState.hostReady && pvpBattleState.guestReady) {
         pvpBattleState.started = true;
-        pvpBattleState.turn = 'host';
-        pvpAppendLog('雙方已就緒，對戰開始（Host 先攻）');
-        setPvpStatus('對戰開始');
+        pvpAppendLog('雙方已就緒，進入轉珠戰鬥！');
+        setPvpStatus('戰鬥開始');
     }
 
-    await pvpUpdateRoom({ battleState: pvpBattleState, status: 'playing' });
+    await pvpUpdateRoom({ battleState: pvpBattleState, status: pvpBattleState.started ? 'playing' : 'ready' });
+
+    // 雙方都準備好後，各自進入真正的轉珠戰鬥
+    if (pvpBattleState.started) {
+        pvpLaunchRealBattle();
+    }
 }
 
-async function pvpAttack() {
-    if (!pvpCanAttack()) return;
+function pvpLaunchRealBattle() {
+    const scale = pvpCalcDifficultyScale(pvpMyRating);
+    const enemyList = pvpBuildRealEnemies(scale);
+    // 隱藏 PVP 面板
+    const pvpScreen = document.getElementById('pvp-screen');
+    if (pvpScreen) pvpScreen.remove();
+    // 啟動真正的轉珠戰鬥
+    startPvpBattle(enemyList);
+}
 
-    const targetRole = pvpMyRole === 'host' ? 'guest' : 'host';
-    const pvpDamage = Math.floor(Math.random() * 18) + 8;
-    pvpBattleState.hp[targetRole] = Math.max(0, pvpBattleState.hp[targetRole] - pvpDamage);
-    pvpAppendLog(`${pvpMyName} 對對手造成 ${pvpDamage} 傷害`);
+async function pvpReportBattleResult(stagesCleared, hpPercent, totalDamage) {
+    if (!pvpRoomCode || !pvpMyRole || !pvpBattleState) return;
 
-    const stage = pvpGetCurrentStage();
-    if (stage && !pvpBattleState.winner) {
-        const stageDamage = Math.floor(Math.random() * (stage.atkMax - stage.atkMin + 1)) + stage.atkMin;
-        pvpBattleState.hp[pvpMyRole] = Math.max(0, pvpBattleState.hp[pvpMyRole] - stageDamage);
-        stage.hp = Math.max(0, stage.hp - pvpDamage);
-        pvpAppendLog(`${stage.name} 反擊造成 ${stageDamage} 傷害`);
-        if (stage.hp <= 0) {
-            pvpAppendLog(`已擊破第 ${pvpBattleState.currentStage} 關：${stage.name}`);
-            if (pvpBattleState.currentStage < 3) {
-                pvpBattleState.currentStage += 1;
-                pvpAppendLog(`進入第 ${pvpBattleState.currentStage} 關`);
-            }
-        }
-    }
+    const resultKey = pvpMyRole === 'host' ? 'hostResult' : 'guestResult';
+    pvpBattleState[resultKey] = { stagesCleared, hpPercent, totalDamage, finished: true };
+    pvpAppendLog(`${pvpMyName} 完成戰鬥：通關 ${stagesCleared}/3，HP ${hpPercent}%`);
 
-    pvpTrySettleWinnerByHp();
-    if (!pvpBattleState.winner) {
-        pvpBattleState.turn = targetRole;
+    await pvpUpdateRoom({ battleState: pvpBattleState });
+
+    // 檢查雙方是否都完成
+    pvpCheckBothFinished();
+}
+
+async function pvpCheckBothFinished() {
+    if (!pvpBattleState) return;
+    const hr = pvpBattleState.hostResult;
+    const gr = pvpBattleState.guestResult;
+    if (!hr?.finished || !gr?.finished) return;
+    if (pvpBattleState.winner) return;
+
+    // 判定勝負：通關數 > HP% > 總傷害
+    let winnerRole = '';
+    if (hr.stagesCleared !== gr.stagesCleared) {
+        winnerRole = hr.stagesCleared > gr.stagesCleared ? 'host' : 'guest';
+    } else if (hr.hpPercent !== gr.hpPercent) {
+        winnerRole = hr.hpPercent > gr.hpPercent ? 'host' : 'guest';
+    } else if (hr.totalDamage !== gr.totalDamage) {
+        winnerRole = hr.totalDamage > gr.totalDamage ? 'host' : 'guest';
     } else {
-        pvpAppendLog(pvpBattleState.winner === 'host' ? '房主獲勝' : '加入者獲勝');
-        await pvpSaveMatchResult(pvpBattleState.winner);
-        await pvpFinalizeRatingIfNeeded(pvpBattleState.winner);
+        winnerRole = 'host'; // 平局房主勝
     }
 
-    await pvpUpdateRoom({ battleState: pvpBattleState, winner: pvpBattleState.winner || '' });
+    pvpBattleState.winner = winnerRole;
+    pvpAppendLog(winnerRole === 'host' ? '房主獲勝！' : '加入者獲勝！');
+
+    await pvpSaveMatchResult(winnerRole);
+    await pvpFinalizeRatingIfNeeded(winnerRole);
+    await pvpUpdateRoom({ battleState: pvpBattleState, winner: winnerRole });
+
+    // 顯示最終結果
+    pvpShowFinalResult();
+}
+
+function pvpShowFinalResult() {
+    if (!pvpBattleState) return;
+    const hr = pvpBattleState.hostResult || {};
+    const gr = pvpBattleState.guestResult || {};
+    const iWin = pvpBattleState.winner === pvpMyRole;
+    const myResult = pvpMyRole === 'host' ? hr : gr;
+    const opResult = pvpMyRole === 'host' ? gr : hr;
+
+    const screen = document.getElementById('result-screen');
+    if (screen && screen.classList.contains('show')) {
+        const waitDiv = screen.querySelector('div[style*="等待對手"]');
+        if (waitDiv) waitDiv.remove();
+
+        const finalHtml = `
+            <div style="margin-top:16px;padding:12px;border:1px solid rgba(255,215,0,0.2);border-radius:8px;background:rgba(0,0,0,0.5);">
+                <div style="font-size:16px;font-weight:bold;color:${iWin ? '#7bed9f' : '#ff7b7b'};text-align:center;margin-bottom:8px;">
+                    ${iWin ? '🏆 你贏了！' : '💀 你輸了…'}
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:#ccc;">
+                    <div style="text-align:center;"><div style="color:#ffd700;font-weight:bold;margin-bottom:4px;">你</div>
+                        <div>通關 ${myResult.stagesCleared || 0}/3</div>
+                        <div>HP ${myResult.hpPercent || 0}%</div>
+                        <div>傷害 ${(myResult.totalDamage || 0).toLocaleString()}</div>
+                    </div>
+                    <div style="text-align:center;"><div style="color:#64c8ff;font-weight:bold;margin-bottom:4px;">${pvpEnemyName}</div>
+                        <div>通關 ${opResult.stagesCleared || 0}/3</div>
+                        <div>HP ${opResult.hpPercent || 0}%</div>
+                        <div>傷害 ${(opResult.totalDamage || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div style="text-align:center;margin-top:8px;font-size:11px;color:#aaa;">
+                    積分：${pvpMyRating}
+                </div>
+            </div>`;
+        const overlay = screen.querySelector('.result-overlay');
+        if (overlay) overlay.insertAdjacentHTML('beforeend', finalHtml);
+    }
 }
 
 async function pvpSaveMatchResult(winnerRole) {
@@ -4621,13 +4731,15 @@ async function pvpSaveMatchResult(winnerRole) {
         if (!hostUid || !guestUid) return;
 
         const hostWin = winnerRole === 'host';
+        const hr = pvpBattleState?.hostResult || {};
+        const gr = pvpBattleState?.guestResult || {};
         const hostRecord = {
             roomCode: pvpRoomCode,
             opponentUid: guestUid,
             opponentName: room.guestName || '對手',
             result: hostWin ? 'win' : 'lose',
-            hpSelf: pvpBattleState?.hp?.host ?? 0,
-            hpEnemy: pvpBattleState?.hp?.guest ?? 0,
+            stagesCleared: hr.stagesCleared || 0,
+            hpPercent: hr.hpPercent || 0,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             ts: now,
         };
@@ -4636,8 +4748,8 @@ async function pvpSaveMatchResult(winnerRole) {
             opponentUid: hostUid,
             opponentName: room.hostName || '房主',
             result: hostWin ? 'lose' : 'win',
-            hpSelf: pvpBattleState?.hp?.guest ?? 0,
-            hpEnemy: pvpBattleState?.hp?.host ?? 0,
+            stagesCleared: gr.stagesCleared || 0,
+            hpPercent: gr.hpPercent || 0,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             ts: now,
         };
@@ -4657,11 +4769,6 @@ async function pvpResetBattle() {
     }
 
     pvpInitBattleState();
-    const hostRating = clampPvpRating(pvpLiveRoomData?.hostRating || 0);
-    const guestRating = clampPvpRating(pvpLiveRoomData?.guestRating || 0);
-    const scale = pvpCalcDifficultyScale(Math.floor((hostRating + guestRating) / 2));
-    pvpBattleState.stages = pvpBuildStagesByScale(scale);
-    pvpBattleState.currentStage = 1;
     pvpBattleState.ratingSettled = false;
     pvpAppendLog('房主重置了對戰');
     await pvpUpdateRoom({ battleState: pvpBattleState, status: 'ready', winner: '' });
@@ -4700,7 +4807,7 @@ function formatPvpRecord(r) {
             <div style="font-size:12px;color:#dce3f8;">vs ${r.opponentName || '對手'} <span style="color:#8aa;">(${r.roomCode || '-'})</span></div>
             <div style="font-size:11px;color:${color};font-weight:bold;">${badge}</div>
         </div>
-        <div style="font-size:11px;color:#9ab;margin-top:4px;">HP ${r.hpSelf ?? '-'} : ${r.hpEnemy ?? '-'} ・ ${time}</div>
+        <div style="font-size:11px;color:#9ab;margin-top:4px;">通關 ${r.stagesCleared ?? '-'}/3 · HP ${r.hpPercent ?? '-'}% ・ ${time}</div>
     </div>`;
 }
 
@@ -4767,18 +4874,14 @@ function renderPvpRoom() {
     const box = document.getElementById('pvp-room');
     if (!box) return;
 
-    const hostHp = pvpBattleState?.hp?.host ?? '--';
-    const guestHp = pvpBattleState?.hp?.guest ?? '--';
-    const stage = pvpGetCurrentStage();
-    const stageName = stage?.name || '--';
-    const stageHp = stage ? `${stage.hp}/${stage.maxHp}` : '--';
-    const turnLabel = !pvpBattleState?.started
-        ? '等待準備'
-        : (pvpBattleState.turn === 'host' ? '房主回合' : '加入者回合');
+    const hr = pvpBattleState?.hostResult;
+    const gr = pvpBattleState?.guestResult;
+    const hostStatus = hr?.finished ? `通關 ${hr.stagesCleared}/3 · HP ${hr.hpPercent}%` : (pvpBattleState?.hostReady ? '已準備' : '未準備');
+    const guestStatus = gr?.finished ? `通關 ${gr.stagesCleared}/3 · HP ${gr.hpPercent}%` : (pvpBattleState?.guestReady ? '已準備' : '未準備');
 
     const winnerLabel = pvpBattleState?.winner
         ? (pvpBattleState.winner === 'host' ? '房主獲勝' : '加入者獲勝')
-        : '尚未分出勝負';
+        : (pvpBattleState?.started ? '戰鬥進行中…' : '等待雙方準備');
 
     const dc = pvpBattleState?.disconnect || {};
     const hostDc = dc.hostCount || 0;
@@ -4788,9 +4891,11 @@ function renderPvpRoom() {
     const guestRemain = dc.guestDeadlineTs ? Math.max(0, Math.ceil((dc.guestDeadlineTs - nowTs) / 1000)) : 0;
     const dcAlert = hostRemain > 0
         ? `房主斷線倒數：${hostRemain}s`
-        : (guestRemain > 0 ? `加入者斷線倒數：${guestRemain}s` : '雙方連線正常');
+        : (guestRemain > 0 ? `加入者斷線倒數：${guestRemain}s` : '');
 
     const logs = (pvpBattleState?.logs || []).map((x) => `<div style="padding:4px 0;border-bottom:1px dashed rgba(255,255,255,0.06);">${x}</div>`).join('') || '<div style="color:#667;">尚無紀錄</div>';
+
+    const canReady = pvpRoomCode && pvpBattleState && !pvpBattleState.started && pvpLiveRoomData?.guestUid;
 
     box.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr;gap:12px;">
@@ -4805,24 +4910,23 @@ function renderPvpRoom() {
             </div>
 
             <div style="padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(18,22,40,0.8);">
-                <div style="font-size:13px;color:#ffd166;margin-bottom:8px;">對戰面板</div>
+                <div style="font-size:13px;color:#ffd166;margin-bottom:8px;">⚔️ 轉珠對戰（3 關卡：2 野怪 + 1 BOSS）</div>
                 <div style="font-size:12px;color:#dce3f8;line-height:1.8;">
                     <div>你：${pvpMyName} ${pvpMyRole ? `（${pvpMyRole === 'host' ? '房主' : '加入者'}）` : ''}</div>
                     <div>對手：${pvpEnemyName}</div>
-                    <div>目前回合：${turnLabel}</div>
-                    <div>勝負：${winnerLabel}</div>
-                    <div>你的積分：${pvpMyRating}</div>
-                    <div>HP（房主 / 加入者）：${hostHp} / ${guestHp}</div>
-                    <div>關卡：第 ${pvpBattleState?.currentStage || 1} 關（${stageName}）HP ${stageHp}</div>
+                    <div>狀態：${winnerLabel}</div>
+                    <div>你的積分：<span style="color:#ffd700;">${pvpMyRating}</span></div>
+                    <div>房主戰績：${hostStatus}</div>
+                    <div>加入者戰績：${guestStatus}</div>
                     <div>中離次數（房主 / 加入者）：${hostDc} / ${guestDc}</div>
-                    <div style="color:#ffd166;">${dcAlert}</div>
+                    ${dcAlert ? `<div style="color:#ffd166;">${dcAlert}</div>` : ''}
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-                    <button onclick="pvpReady()" ${!pvpRoomCode || (pvpBattleState && pvpBattleState.started) ? 'disabled' : ''} style="padding:8px 10px;border:none;border-radius:6px;background:#16a085;color:#fff;">準備開打</button>
-                    <button onclick="pvpAttack()" ${pvpCanAttack() ? '' : 'disabled'} style="padding:8px 10px;border:none;border-radius:6px;background:${pvpCanAttack() ? '#c0392b' : '#555'};color:#fff;">普通攻擊</button>
+                    <button onclick="pvpReady()" ${canReady ? '' : 'disabled'} style="padding:8px 14px;border:none;border-radius:6px;background:${canReady ? '#16a085' : '#555'};color:#fff;font-weight:bold;">準備開戰</button>
                     <button onclick="pvpResetBattle()" ${!pvpRoomCode ? 'disabled' : ''} style="padding:8px 10px;border:none;border-radius:6px;background:#7f8c8d;color:#fff;">重置對戰</button>
                     <button onclick="showPvpHistory()" style="padding:8px 10px;border:none;border-radius:6px;background:#3b82f6;color:#fff;">戰績</button>
                 </div>
+                <div style="margin-top:8px;font-size:10px;color:#778;">雙方準備後各自進入轉珠戰鬥，打完 3 關後比較通關數與 HP 判定勝負</div>
                 <div style="margin-top:10px;font-size:11px;color:#8ea0c6;max-height:140px;overflow:auto;">${logs}</div>
             </div>
 
