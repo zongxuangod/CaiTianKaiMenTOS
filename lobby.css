@@ -577,7 +577,7 @@
     flex-shrink: 0;
 }
 .battle-main-btn {
-    position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
     z-index: 15;
     width: 90px; height: 90px;
     border-radius: 50%;
