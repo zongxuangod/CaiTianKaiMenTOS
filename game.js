@@ -307,46 +307,116 @@ const SFX = (() => {
         stopBGM();
         bgmPlaying = type;
 
-        const chords = {
-            lobby: [[262,330,392],[220,277,330],[349,440,523],[392,494,587]],
-            battle: [[220,277,330],[262,330,392],[349,440,523],[196,247,294]],
-        };
-        const prog = chords[type] || chords.lobby;
+        if (type === 'lobby') {
+            startLobbyBGM();
+            return;
+        }
+
+        // battle BGM
+        const prog = [[220,277,330],[262,330,392],[349,440,523],[196,247,294]];
         let ci = 0, beat = 0;
-        const bpm = type === 'battle' ? 135 : 85;
+        const bpm = 135;
         const beatMs = 60000 / bpm;
         const beatSec = beatMs / 1000;
-
         let tickCount = 0;
+
         function tick() {
             if (!ctx || bgmPlaying !== type) return;
             const chord = prog[ci];
-
-            // 每 16 拍清理一次已結束的節點
             tickCount++;
             if (tickCount % 16 === 0) pruneEndedNodes();
 
-            if (type === 'battle') {
-                // 低音 bass（每拍第一下）
-                if (beat === 0) bgmPing(chord[0] * 0.5, beatSec * 3.5, 'sine', 0.06);
-                // kick + hihat 節奏
-                if (beat === 0 || beat === 2) bgmKick(0.05);
-                bgmHihat(0.025);
-                // 琶音 triangle
-                const arpF = chord[beat % chord.length] * 1;
-                bgmPing(arpF, beatSec * 0.6, 'triangle', 0.04, 0);
-            } else {
-                // lobby: 柔和 pad
-                if (beat === 0) {
-                    chord.forEach(f => bgmPing(f, beatSec * 3.8, 'sine', 0.035));
-                }
-                // 輕柔琶音
-                const arpF = chord[beat % chord.length] * 2;
-                bgmPing(arpF, beatSec * 0.5, 'sine', 0.03, 0);
-            }
+            if (beat === 0) bgmPing(chord[0] * 0.5, beatSec * 3.5, 'sine', 0.06);
+            if (beat === 0 || beat === 2) bgmKick(0.05);
+            bgmHihat(0.025);
+            const arpF = chord[beat % chord.length] * 1;
+            bgmPing(arpF, beatSec * 0.6, 'triangle', 0.04, 0);
 
             beat++;
             if (beat >= 4) { beat = 0; ci = (ci + 1) % prog.length; }
+        }
+        bgmInterval = setInterval(tick, beatMs);
+        tick();
+    }
+
+    // ===== 大廳 BGM：七里香風格浪漫鋼琴 =====
+    function startLobbyBGM() {
+        const bpm = 74;
+        const beatMs = 60000 / bpm;
+        const beatSec = beatMs / 1000;
+
+        // C → Am → F → G 和弦進行
+        const chords = [
+            [262, 330, 392],   // C
+            [220, 262, 330],   // Am
+            [349, 440, 523],   // F
+            [392, 494, 587],   // G
+        ];
+
+        // 主旋律（32 拍 = 8 小節，每小節 4 拍）
+        const melody = [
+            // A 段：溫柔敘事
+            330, 392, 440, 392,   // E4 G4 A4 G4
+            440, 392, 330, 294,   // A4 G4 E4 D4
+            262, 294, 330, 440,   // C4 D4 E4 A4
+            392, 330, 294, 330,   // G4 E4 D4 E4
+            // B 段：副歌高潮
+            523, 494, 440, 392,   // C5 B4 A4 G4
+            440, 523, 587, 523,   // A4 C5 D5 C5
+            494, 440, 392, 330,   // B4 A4 G4 E4
+            294, 262, 247, 262,   // D4 C4 B3 C4
+        ];
+
+        // 副旋律（右手裝飾音，較高八度，輕柔）
+        const melody2 = [
+            0,   784, 0,   660,
+            0,   660, 0,   0,
+            0,   0,   660, 0,
+            0,   0,   0,   0,
+            0,   0,   880, 0,
+            0,   0,   0,   0,
+            0,   880, 0,   660,
+            0,   0,   0,   0,
+        ];
+
+        let ci = 0, beat = 0, tickCount = 0;
+
+        function tick() {
+            if (!ctx || bgmPlaying !== 'lobby') return;
+            tickCount++;
+            if (tickCount % 16 === 0) pruneEndedNodes();
+
+            const chord = chords[ci];
+            const mi = (tickCount - 1) % melody.length;
+            const mf = melody[mi];
+            const mf2 = melody2[mi];
+
+            // 主旋律（triangle 模擬鋼琴）
+            if (mf > 0) {
+                bgmPing(mf, beatSec * 0.75, 'triangle', 0.05);
+                bgmPing(mf * 2, beatSec * 0.25, 'sine', 0.012);
+            }
+
+            // 副旋律裝飾音
+            if (mf2 > 0) {
+                bgmPing(mf2, beatSec * 0.4, 'sine', 0.018, beatSec * 0.25);
+            }
+
+            // 和弦 pad（每小節第 1 拍）
+            if (beat === 0) {
+                chord.forEach(f => bgmPing(f, beatSec * 3.9, 'sine', 0.018));
+                // 低音 bass
+                bgmPing(chord[0] * 0.5, beatSec * 3.8, 'sine', 0.028);
+            }
+
+            // 第 3 拍輕輕補一個和弦音（模擬鋼琴伴奏節奏）
+            if (beat === 2) {
+                bgmPing(chord[1], beatSec * 1.5, 'sine', 0.015);
+                bgmPing(chord[2], beatSec * 1.5, 'sine', 0.012);
+            }
+
+            beat++;
+            if (beat >= 4) { beat = 0; ci = (ci + 1) % chords.length; }
         }
 
         bgmInterval = setInterval(tick, beatMs);
