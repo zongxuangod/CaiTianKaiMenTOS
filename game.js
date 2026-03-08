@@ -1819,14 +1819,8 @@ function pvpStartBattleHeartbeat() {
         const opOffline = opLastSeen > 0 && (now - opLastSeen > 10000);
 
         if (opOffline && !pvpPaused) {
-            // 對手剛斷線 → 暫停戰鬥
-            pvpOpponentDcDeadline = now + 30000;
-            pvpPauseBattle();
-        } else if (!opOffline && pvpPaused) {
-            // 對手回線 → 恢復戰鬥
-            pvpOpponentDcCount++;
-            if (pvpOpponentDcCount >= 2) {
-                // 2 次中離 → 對手判負，我方獲勝
+            if (pvpOpponentDcCount >= 1) {
+                // 第 2 次斷線 → 直接判負，不再等待
                 pvpResumeBattle();
                 pvpFinishBattle(true);
                 if (typeof pvpBattleState !== 'undefined' && pvpBattleState) {
@@ -1834,11 +1828,19 @@ function pvpStartBattleHeartbeat() {
                     if (typeof pvpUpdateRoom === 'function') {
                         pvpUpdateRoom({ battleState: pvpBattleState, winner: myRole });
                     }
+                    if (typeof pvpSaveMatchResult === 'function') pvpSaveMatchResult(myRole);
+                    if (typeof pvpFinalizeRatingIfNeeded === 'function') pvpFinalizeRatingIfNeeded(myRole);
                 }
                 return;
             }
+            // 第 1 次斷線 → 暫停戰鬥，給 30 秒
+            pvpOpponentDcDeadline = now + 30000;
+            pvpPauseBattle();
+        } else if (!opOffline && pvpPaused) {
+            // 對手回線 → 恢復戰鬥，記 1 次中離
+            pvpOpponentDcCount = 1;
             pvpResumeBattle();
-            showFloatingText('對手已回線，繼續戰鬥！', '#7bed9f', 'team');
+            showFloatingText('對手已回線（1/1），再斷線直接判負', '#ffd700', 'team');
         }
 
         // 暫停中 → 更新倒數
@@ -1847,7 +1849,7 @@ function pvpStartBattleHeartbeat() {
             const cdEl = document.getElementById('pvp-pause-countdown');
             if (cdEl) cdEl.textContent = remain;
             const infoEl = document.getElementById('pvp-pause-dc-info');
-            if (infoEl) infoEl.textContent = `對手中離次數：${pvpOpponentDcCount}/2（達 2 次直接判負）`;
+            if (infoEl) infoEl.textContent = pvpOpponentDcCount >= 1 ? '已用完中離機會，再斷線直接判負' : '首次中離，30 秒內回線可繼續';
 
             if (remain <= 0) {
                 // 30 秒到 → 對手判負，我方獲勝

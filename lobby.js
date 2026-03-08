@@ -4453,38 +4453,49 @@ function pvpStartRuntimeTimers() {
         const hostOffline = pvpBattleState.started && room.guestUid && hostSeen && (now - hostSeen > 10000);
         const guestOffline = pvpBattleState.started && room.guestUid && guestSeen && (now - guestSeen > 10000);
 
-        if (hostOffline && !dc.hostDeadlineTs) {
-            dc.hostDeadlineTs = now + 30000;
-            pvpAppendLog('房主斷線，30 秒內未回線將判負');
-            changed = true;
+        // 房主斷線判定
+        if (hostOffline && !dc.hostDeadlineTs && !pvpBattleState.winner) {
+            if ((dc.hostCount || 0) >= 1) {
+                // 第 2 次斷線 → 直接判負
+                pvpBattleState.winner = 'guest';
+                pvpAppendLog('房主第 2 次斷線，直接判定加入者獲勝');
+                changed = true;
+            } else {
+                dc.hostDeadlineTs = now + 30000;
+                pvpAppendLog('房主斷線，30 秒內未回線將判負');
+                changed = true;
+            }
         }
-        if (guestOffline && !dc.guestDeadlineTs) {
-            dc.guestDeadlineTs = now + 30000;
-            pvpAppendLog('加入者斷線，30 秒內未回線將判負');
-            changed = true;
+        // 加入者斷線判定
+        if (guestOffline && !dc.guestDeadlineTs && !pvpBattleState.winner) {
+            if ((dc.guestCount || 0) >= 1) {
+                // 第 2 次斷線 → 直接判負
+                pvpBattleState.winner = 'host';
+                pvpAppendLog('加入者第 2 次斷線，直接判定房主獲勝');
+                changed = true;
+            } else {
+                dc.guestDeadlineTs = now + 30000;
+                pvpAppendLog('加入者斷線，30 秒內未回線將判負');
+                changed = true;
+            }
         }
 
+        // 房主回線
         if (!hostOffline && dc.hostDeadlineTs) {
             dc.hostDeadlineTs = 0;
-            dc.hostCount = (dc.hostCount || 0) + 1;
-            pvpAppendLog(`房主已回線（中離 ${dc.hostCount}/2）`);
+            dc.hostCount = 1;
+            pvpAppendLog('房主已回線（1/1），再斷線直接判負');
             changed = true;
-            if (dc.hostCount >= 2 && !pvpBattleState.winner) {
-                pvpBattleState.winner = 'guest';
-                pvpAppendLog('房主中離達 2 次，判定加入者獲勝');
-            }
         }
+        // 加入者回線
         if (!guestOffline && dc.guestDeadlineTs) {
             dc.guestDeadlineTs = 0;
-            dc.guestCount = (dc.guestCount || 0) + 1;
-            pvpAppendLog(`加入者已回線（中離 ${dc.guestCount}/2）`);
+            dc.guestCount = 1;
+            pvpAppendLog('加入者已回線（1/1），再斷線直接判負');
             changed = true;
-            if (dc.guestCount >= 2 && !pvpBattleState.winner) {
-                pvpBattleState.winner = 'host';
-                pvpAppendLog('加入者中離達 2 次，判定房主獲勝');
-            }
         }
 
+        // 30 秒倒數到期
         if (dc.hostDeadlineTs && now > dc.hostDeadlineTs && !pvpBattleState.winner) {
             pvpBattleState.winner = 'guest';
             dc.hostDeadlineTs = 0;
@@ -4974,7 +4985,7 @@ function renderPvpRoom() {
     let dcResultMsg = '';
     if (iLostByDc) {
         const myDcCount = pvpMyRole === 'host' ? (dc.hostCount || 0) : (dc.guestCount || 0);
-        if (myDcCount >= 2) dcResultMsg = '你中離達 2 次，已被判定敗北。';
+        if (myDcCount >= 1) dcResultMsg = '你中離後再次斷線，已被判定敗北。';
         else dcResultMsg = '你斷線超過 30 秒未回線，已被判定敗北。';
     } else if (iWonByDc) {
         dcResultMsg = '對手中離，你已獲勝！';
