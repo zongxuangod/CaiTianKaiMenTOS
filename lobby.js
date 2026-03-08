@@ -1,4 +1,4 @@
-﻿// ===== 主城大廳系統 =====
+// ===== 主城大廳系統 =====
 
 let playerGems = 5;
 let playerGold = 10000;
@@ -146,7 +146,12 @@ function saveGame() {
         gachaPityTarget: gachaPityTarget ? gachaPityTarget.name : null,
         skillBooks,
     };
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch(e) {}
+    try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+        if (typeof window.queueCloudSave === 'function') {
+            window.queueCloudSave(data);
+        }
+    } catch(e) {}
 }
 
 function loadGame() {
@@ -1675,52 +1680,68 @@ let gachaFlippedCount = 0;
 let gachaCurrentIndex = 0;
 let gachaAnimating = false;
 
-function doPull(count) {
+async function doPull(count) {
     const cost = count === 1 ? 5 : 50;
     if (playerGems < cost) { showToast('紫珀原石不足！'); return; }
-    playerGems -= cost;
-    updateResources();
-    document.getElementById('gacha-gems').textContent = playerGems;
 
-    const ssrPool = GACHA_POOL.filter(c => c.rarity === 'SSR');
-    const results = [];
-    for (let i = 0; i < count; i++) {
-        gachaPity++;
-        let picked = null;
+    try {
+        const data = await apiFetch('/gacha/pull', {
+            method: 'POST',
+            body: JSON.stringify({
+                count,
+                pityTargetName: gachaPityTarget ? gachaPityTarget.name : null,
+            }),
+        });
 
-        if (gachaPity >= 66) {
-            if (gachaPityTarget) {
-                picked = { ...gachaPityTarget };
-            } else {
-                picked = { ...ssrPool[Math.floor(Math.random() * ssrPool.length)] };
+        const pulledCards = (data.results || []).map((r) => {
+            const base = CHARACTERS.find((c) => c.name === r.name);
+            if (!base) {
+                return {
+                    name: r.name,
+                    title: r.name,
+                    rarity: r.rarity || 'R',
+                    element: 'fire',
+                    img: '',
+                    lv: 1,
+                    maxLv: r.rarity === 'SSR' ? 99 : (r.rarity === 'SR' ? 70 : 50),
+                    atk: 500,
+                    hp: 2000,
+                    rcv: 150,
+                    cost: 10,
+                    activeSkill: { name: '未知技能', cd: 8, desc: '暫無技能資料', effect: '' },
+                    leaderSkill: { name: '未知隊長技', desc: '暫無隊長技資料', mult: [] },
+                    teamSkill: { name: '未知隊伍技', desc: '暫無隊伍技資料' },
+                    bond: { name: '未知羈絆', desc: '暫無羈絆資料' },
+                };
             }
-            gachaPity = 0;
-        } else {
-            const roll = Math.random() * 100;
-            let acc = 0;
-            for (const card of GACHA_POOL) {
-                acc += card.weight;
-                if (roll < acc) {
-                    picked = { ...card };
-                    break;
-                }
-            }
-            if (picked && picked.rarity === 'SSR') gachaPity = 0;
+            return { ...base };
+        });
+
+        pulledCards.forEach((card) => {
+            ensureBaseStats(card);
+            ownedCards.push(card);
+        });
+
+        if (data.resources) {
+            playerGems = Number(data.resources.gems || playerGems);
+            playerGold = Number(data.resources.gold || playerGold);
+            gachaPity = Number(data.resources.gacha_pity || 0);
+            const targetName = data.resources.gacha_pity_target || null;
+            gachaPityTarget = targetName ? (GACHA_POOL.find((c) => c.name === targetName) || null) : null;
         }
-        if (picked) results.push(picked);
+
+        updateResources();
+        document.getElementById('gacha-gems').textContent = playerGems;
+        updatePityDisplay();
+        saveGame();
+
+        if (DAILY_QUESTS[2]) DAILY_QUESTS[2].progress = Math.min(DAILY_QUESTS[2].target, DAILY_QUESTS[2].progress + 1);
+        trackRookieQuest('gacha');
+
+        showGachaAnimation(pulledCards);
+    } catch (error) {
+        showToast(error.message || '抽卡失敗，請稍後再試');
     }
-
-    results.forEach(card => {
-        ensureBaseStats(card);
-        ownedCards.push(card);
-    });
-    updatePityDisplay();
-    saveGame();
-
-    if (DAILY_QUESTS[2]) DAILY_QUESTS[2].progress = Math.min(DAILY_QUESTS[2].target, DAILY_QUESTS[2].progress + 1);
-    trackRookieQuest('gacha');
-
-    showGachaAnimation(results);
 }
 
 function showGachaAnimation(results) {
@@ -3420,7 +3441,7 @@ function showSettings() {
     html += `召喚師等級：<span style="color:#64c8ff;">Lv.${summonerLv}</span><br>`;
     html += `擁有角色數：<span style="color:#7bed9f;">${ownedCards.length}</span><br>`;
     html += `體力藥水：<span style="color:#ff6b9d;"><img src="其他圖示/體力圖示.png" style="width:14px;height:14px;vertical-align:middle;"> ×${staminaPotions}</span>`;
-    html += '</div></div>';
+    html += `</div><div style="margin-top:10px;"><button onclick="closeSettings();logoutAccount();" style="padding:8px 14px;background:rgba(255,71,87,0.16);border:1px solid rgba(255,71,87,0.35);border-radius:6px;color:#ff9aa8;font-size:12px;font-weight:bold;cursor:pointer;">登出帳號</button></div></div>`;
 
     // 體力藥水
     html += `<div style="background:linear-gradient(135deg,rgba(18,22,45,0.95),rgba(12,14,30,0.98));border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px;">`;
@@ -3447,6 +3468,1060 @@ function showSettings() {
 function closeSettings() {
     const el = document.getElementById('settings-screen');
     if (el) el.remove();
+}
+
+// ===== 好友系統（Firebase 邀請版） =====
+let friendSearchCache = [];
+let pvpInviteRealtimeUnsub = null;
+
+async function getCurrentProfile() {
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user || !window.firebaseDb) return null;
+    const snap = await window.firebaseDb.collection('users').doc(user.uid).get();
+    return snap.exists ? (snap.data() || null) : null;
+}
+
+function friendCollection(uid) {
+    return window.firebaseDb.collection('users').doc(uid).collection('friends');
+}
+
+function incomingRequestCollection(uid) {
+    return window.firebaseDb.collection('users').doc(uid).collection('friendRequestsIncoming');
+}
+
+function outgoingRequestCollection(uid) {
+    return window.firebaseDb.collection('users').doc(uid).collection('friendRequestsOutgoing');
+}
+
+function pvpInviteIncomingCollection(uid) {
+    return window.firebaseDb.collection('users').doc(uid).collection('pvpInvitesIncoming');
+}
+
+function pvpInviteOutgoingCollection(uid) {
+    return window.firebaseDb.collection('users').doc(uid).collection('pvpInvitesOutgoing');
+}
+
+async function getRelationStatus(myUid, targetUid) {
+    const [friendSnap, outgoingSnap, incomingSnap] = await Promise.all([
+        friendCollection(myUid).doc(targetUid).get(),
+        outgoingRequestCollection(myUid).doc(targetUid).get(),
+        incomingRequestCollection(myUid).doc(targetUid).get(),
+    ]);
+    if (friendSnap.exists) return 'friend';
+    if (outgoingSnap.exists) return 'outgoing';
+    if (incomingSnap.exists) return 'incoming';
+    return 'none';
+}
+
+async function openFriendsPanel() {
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user || !window.firebaseDb) {
+        showToast('請先使用帳號登入才能使用好友功能');
+        return;
+    }
+
+    await clearExpiredPvpInvites();
+    const profile = await getCurrentProfile();
+    const myPublicUid = profile?.publicUid || '尚未建立';
+
+    const existing = document.getElementById('friends-screen');
+    if (existing) existing.remove();
+
+    let html = '<div id="friends-screen" style="position:absolute;inset:0;z-index:260;background:rgba(0,0,0,0.96);display:flex;flex-direction:column;">';
+    html += '<div style="padding:14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,215,0,0.12);"><button class="back-btn" onclick="closeFriendsPanel()">← 返回</button><div style="font-size:16px;font-weight:bold;letter-spacing:3px;color:#ffd700;">好友</div><div style="width:50px;"></div></div>';
+    html += `<div style="padding:8px 12px;color:#9ab;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.08);">你的公開 UID：<span style="color:#ffd700;font-weight:bold;">${myPublicUid}</span></div>`;
+    html += '<div style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;gap:8px;">';
+    html += '<input id="friend-search-input" type="text" placeholder="輸入玩家 UID（例：CTKXXXXXXX）" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(20,24,48,0.9);color:#fff;">';
+    html += '<button onclick="searchUsersForFriend()" style="padding:10px 12px;border-radius:8px;border:1px solid rgba(255,215,0,0.35);background:linear-gradient(180deg,#ffd700,#b8860b);color:#1a1a2e;font-weight:bold;">搜尋</button>';
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);">';
+    html += '<button id="friend-tab-list" onclick="switchFriendTab(\'list\')" style="padding:10px;border:none;background:rgba(100,200,255,0.12);color:#fff;">好友列表</button>';
+    html += '<button id="friend-tab-req" onclick="switchFriendTab(\'requests\')" style="padding:10px;border:none;background:rgba(255,255,255,0.03);color:#aaa;">邀請通知</button>';
+    html += '</div>';
+    html += '<div id="friend-search-result" style="max-height:140px;overflow-y:auto;padding:8px;border-bottom:1px solid rgba(255,255,255,0.08);"></div>';
+    html += '<div id="friend-outgoing-result" style="max-height:120px;overflow-y:auto;padding:8px;border-bottom:1px solid rgba(255,255,255,0.08);"></div>';
+    html += '<div id="friend-pvp-invite-result" style="max-height:120px;overflow-y:auto;padding:8px;border-bottom:1px solid rgba(255,255,255,0.08);"></div>';
+    html += '<div id="friend-list-container" style="flex:1;overflow-y:auto;padding:10px;"></div>';
+    html += '</div>';
+
+    document.getElementById('lobby-screen').insertAdjacentHTML('beforeend', html);
+    loadOutgoingRequests();
+    loadPvpIncomingInvites();
+    startPvpInviteRealtimeListener();
+    switchFriendTab('list');
+}
+
+function closeFriendsPanel() {
+    const el = document.getElementById('friends-screen');
+    if (el) el.remove();
+    if (pvpInviteRealtimeUnsub) {
+        try { pvpInviteRealtimeUnsub(); } catch (e) {}
+        pvpInviteRealtimeUnsub = null;
+    }
+}
+
+function switchFriendTab(tab) {
+    const tabList = document.getElementById('friend-tab-list');
+    const tabReq = document.getElementById('friend-tab-req');
+    if (!tabList || !tabReq) return;
+
+    const isList = tab === 'list';
+    tabList.style.background = isList ? 'rgba(100,200,255,0.12)' : 'rgba(255,255,255,0.03)';
+    tabReq.style.background = isList ? 'rgba(255,255,255,0.03)' : 'rgba(100,200,255,0.12)';
+    tabList.style.color = isList ? '#fff' : '#aaa';
+    tabReq.style.color = isList ? '#aaa' : '#fff';
+
+    if (isList) loadFriendsList();
+    else loadIncomingRequests();
+}
+
+async function searchUsersForFriend() {
+    const input = document.getElementById('friend-search-input');
+    const box = document.getElementById('friend-search-result');
+    if (!input || !box) return;
+
+    const q = input.value.trim().toUpperCase();
+    if (!q) {
+        box.innerHTML = '<div style="color:#888;font-size:12px;padding:6px;">請輸入 UID</div>';
+        return;
+    }
+
+    box.innerHTML = '<div style="color:#888;font-size:12px;padding:6px;">搜尋中...</div>';
+
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const snap = await window.firebaseDb.collection('users').where('publicUid', '==', q).limit(1).get();
+        if (snap.empty) {
+            friendSearchCache = [];
+            box.innerHTML = '<div style="color:#888;font-size:12px;padding:6px;">找不到玩家</div>';
+            return;
+        }
+
+        const doc = snap.docs[0];
+        if (doc.id === me.uid) {
+            friendSearchCache = [];
+            box.innerHTML = '<div style="color:#888;font-size:12px;padding:6px;">這是你自己的 UID</div>';
+            return;
+        }
+
+        const target = { id: doc.id, ...doc.data() };
+        friendSearchCache = [target];
+
+        const status = await getRelationStatus(me.uid, target.id);
+        let btn = `<button onclick="sendFriendRequest('${target.id}')" style="padding:6px 10px;border:none;border-radius:6px;background:#2e8b57;color:#fff;">加好友</button>`;
+        if (status === 'friend') {
+            btn = '<button disabled style="padding:6px 10px;border:none;border-radius:6px;background:#3b4a5e;color:#aab;">已是好友</button>';
+        } else if (status === 'outgoing') {
+            btn = '<button disabled style="padding:6px 10px;border:none;border-radius:6px;background:#6b5b2a;color:#e6d8aa;">已送邀請</button>';
+        } else if (status === 'incoming') {
+            btn = '<button disabled style="padding:6px 10px;border:none;border-radius:6px;background:#2a4f6b;color:#b8def5;">對方已邀請你</button>';
+        }
+
+        box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px dashed rgba(255,255,255,0.08);"><div style="color:#e6e6e6;font-size:13px;">${target.nickname || '召喚師'} <span style="color:#8aa;font-size:11px;">(${target.publicUid || '-'})</span></div>${btn}</div>`;
+    } catch (error) {
+        friendSearchCache = [];
+        box.innerHTML = `<div style="color:#ff7b7b;font-size:12px;padding:6px;">${error.message}</div>`;
+    }
+}
+
+async function sendFriendRequest(toUserId) {
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const myProfile = await getCurrentProfile();
+        const targetSnap = await window.firebaseDb.collection('users').doc(toUserId).get();
+        if (!targetSnap.exists) throw new Error('玩家不存在');
+        const target = targetSnap.data() || {};
+
+        const status = await getRelationStatus(me.uid, toUserId);
+        if (status === 'friend') throw new Error('你們已經是好友');
+        if (status === 'outgoing') throw new Error('邀請已送出，請等待對方回覆');
+        if (status === 'incoming') throw new Error('對方已向你發送邀請，請到邀請通知接受');
+
+        const now = firebase.firestore.FieldValue.serverTimestamp();
+        await outgoingRequestCollection(me.uid).doc(toUserId).set({
+            uid: toUserId,
+            nickname: target.nickname || '召喚師',
+            publicUid: target.publicUid || '',
+            createdAt: now,
+        }, { merge: true });
+
+        await incomingRequestCollection(toUserId).doc(me.uid).set({
+            uid: me.uid,
+            nickname: myProfile?.nickname || playerName || '召喚師',
+            publicUid: myProfile?.publicUid || '',
+            createdAt: now,
+        }, { merge: true });
+
+        showToast('好友邀請已送出');
+        searchUsersForFriend();
+        loadOutgoingRequests();
+        loadIncomingRequests();
+    } catch (error) {
+        showToast(error.message || '送出邀請失敗');
+    }
+}
+
+async function loadOutgoingRequests() {
+    const box = document.getElementById('friend-outgoing-result');
+    if (!box) return;
+
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const snap = await outgoingRequestCollection(me.uid).orderBy('createdAt', 'desc').get();
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (list.length === 0) {
+            box.innerHTML = '<div style="color:#667;font-size:11px;">目前沒有待回覆的邀請</div>';
+            return;
+        }
+
+        box.innerHTML = '<div style="font-size:11px;color:#9ab;margin-bottom:6px;">你送出的邀請：</div>' + list.map((r) =>
+            `<div style="color:#cbd5e1;font-size:12px;padding:4px 0;">• ${r.nickname || '召喚師'} <span style="color:#8aa;">(${r.publicUid || '-'})</span></div>`
+        ).join('');
+    } catch (error) {
+        box.innerHTML = `<div style="color:#ff7b7b;font-size:11px;">${error.message}</div>`;
+    }
+}
+
+async function clearExpiredPvpInvites() {
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) return;
+        const now = Date.now();
+        const snap = await pvpInviteIncomingCollection(me.uid).get();
+        const expired = snap.docs.filter(d => {
+            const x = d.data() || {};
+            return (x.expiresAtTs || 0) > 0 && (x.expiresAtTs < now);
+        });
+        await Promise.all(expired.map(async (d) => {
+            const x = d.data() || {};
+            await pvpInviteIncomingCollection(me.uid).doc(d.id).delete();
+            if (x.fromUid) {
+                await pvpInviteOutgoingCollection(x.fromUid).doc(me.uid).delete();
+            }
+        }));
+    } catch (e) {}
+}
+
+async function loadPvpIncomingInvites() {
+    const box = document.getElementById('friend-pvp-invite-result');
+    if (!box) return;
+
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const snap = await pvpInviteIncomingCollection(me.uid).orderBy('createdAtTs', 'desc').limit(8).get();
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (!list.length) {
+            box.innerHTML = '<div style="color:#667;font-size:11px;">目前沒有新的邀戰通知</div>';
+            return;
+        }
+
+        box.innerHTML = '<div style="font-size:11px;color:#9ab;margin-bottom:6px;">邀戰通知：</div>' + list.map((r) => {
+            const remain = Math.max(0, Math.floor(((r.expiresAtTs || 0) - Date.now()) / 1000));
+            return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,0.08);">
+                <div style="color:#cbd5e1;font-size:12px;">${r.fromName || '好友'} 邀你 PVP（房號 ${r.roomCode || '--'}）<span style="color:#8aa;font-size:10px;"> ${remain}s</span></div>
+                <button onclick="acceptPvpInvite('${r.fromUid || ''}','${r.roomCode || ''}')" style="padding:5px 8px;border:none;border-radius:6px;background:#2e8b57;color:#fff;font-size:11px;">加入</button>
+            </div>`;
+        }).join('');
+    } catch (error) {
+        box.innerHTML = `<div style="color:#ff7b7b;font-size:11px;">${error.message}</div>`;
+    }
+}
+
+async function acceptPvpInvite(fromUid, roomCode) {
+    try {
+        if (!roomCode) throw new Error('邀戰資料失效');
+        closeFriendsPanel();
+        openPvpPanel();
+        setTimeout(async () => {
+            const input = document.getElementById('pvp-join-input');
+            if (input) input.value = roomCode;
+            await pvpJoinRoom();
+        }, 120);
+
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (me) {
+            await pvpInviteIncomingCollection(me.uid).doc(fromUid).delete();
+            await pvpInviteOutgoingCollection(fromUid).doc(me.uid).delete();
+        }
+    } catch (error) {
+        showToast(error.message || '加入邀戰失敗');
+    }
+}
+
+function startPvpInviteRealtimeListener() {
+    const me = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!me || !window.firebaseDb) return;
+
+    if (pvpInviteRealtimeUnsub) {
+        try { pvpInviteRealtimeUnsub(); } catch (e) {}
+        pvpInviteRealtimeUnsub = null;
+    }
+
+    pvpInviteRealtimeUnsub = pvpInviteIncomingCollection(me.uid)
+        .orderBy('createdAtTs', 'desc')
+        .limit(8)
+        .onSnapshot(() => {
+            loadPvpIncomingInvites();
+        }, () => {});
+}
+
+async function loadFriendsList() {
+    const box = document.getElementById('friend-list-container');
+    if (!box) return;
+
+    box.innerHTML = '<div style="color:#888;font-size:12px;">讀取中...</div>';
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const snap = await friendCollection(me.uid).orderBy('createdAt', 'desc').get();
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (list.length === 0) {
+            box.innerHTML = '<div style="color:#888;font-size:12px;">你目前還沒有好友</div>';
+            return;
+        }
+
+        box.innerHTML = list.map((f) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(20,24,48,0.75);margin-bottom:8px;gap:8px;">
+                <div style="color:#f1f1f1;font-size:13px;flex:1;">${f.nickname || '召喚師'} <span style="color:#8aa;font-size:11px;">(${f.publicUid || '-'})</span></div>
+                <button onclick="showFriendProfile('${f.id}', '${(f.nickname || '召喚師').replace(/'/g, "\\'")}')" style="padding:6px 10px;border:none;border-radius:6px;background:#6c5ce7;color:#fff;">資料</button>
+                <button onclick="sendPvpInvite('${f.id}', '${(f.nickname || '好友').replace(/'/g, "\\'")}')" style="padding:6px 10px;border:none;border-radius:6px;background:#355cde;color:#fff;">邀戰</button>
+                <button onclick="removeFriend('${f.id}')" style="padding:6px 10px;border:none;border-radius:6px;background:#a94442;color:#fff;">刪除</button>
+            </div>
+        `).join('');
+    } catch (error) {
+        box.innerHTML = `<div style="color:#ff7b7b;font-size:12px;">${error.message}</div>`;
+    }
+}
+
+async function loadIncomingRequests() {
+    const box = document.getElementById('friend-list-container');
+    if (!box) return;
+
+    box.innerHTML = '<div style="color:#888;font-size:12px;">讀取中...</div>';
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const snap = await incomingRequestCollection(me.uid).orderBy('createdAt', 'desc').get();
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (list.length === 0) {
+            box.innerHTML = '<div style="color:#888;font-size:12px;">目前沒有新的好友邀請</div>';
+            return;
+        }
+
+        box.innerHTML = list.map((r) => `
+            <div style="padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(20,24,48,0.75);margin-bottom:8px;">
+                <div style="color:#f1f1f1;font-size:13px;margin-bottom:8px;">${r.nickname || '召喚師'} <span style="color:#8aa;font-size:11px;">(${r.publicUid || '-'})</span> 向你發送好友邀請</div>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="acceptFriendRequest('${r.id}')" style="padding:6px 10px;border:none;border-radius:6px;background:#2e8b57;color:#fff;">接受</button>
+                    <button onclick="rejectFriendRequest('${r.id}')" style="padding:6px 10px;border:none;border-radius:6px;background:#a94442;color:#fff;">拒絕</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        box.innerHTML = `<div style="color:#ff7b7b;font-size:12px;">${error.message}</div>`;
+    }
+}
+
+async function acceptFriendRequest(fromUserId) {
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const incomingSnap = await incomingRequestCollection(me.uid).doc(fromUserId).get();
+        if (!incomingSnap.exists) throw new Error('邀請不存在或已失效');
+        const fromData = incomingSnap.data() || {};
+
+        const myProfile = await getCurrentProfile();
+        const now = firebase.firestore.FieldValue.serverTimestamp();
+
+        await friendCollection(me.uid).doc(fromUserId).set({
+            uid: fromUserId,
+            nickname: fromData.nickname || '召喚師',
+            publicUid: fromData.publicUid || '',
+            status: 'accepted',
+            createdAt: now,
+        }, { merge: true });
+
+        await friendCollection(fromUserId).doc(me.uid).set({
+            uid: me.uid,
+            nickname: myProfile?.nickname || playerName || '召喚師',
+            publicUid: myProfile?.publicUid || '',
+            status: 'accepted',
+            createdAt: now,
+        }, { merge: true });
+
+        await incomingRequestCollection(me.uid).doc(fromUserId).delete();
+        await outgoingRequestCollection(fromUserId).doc(me.uid).delete();
+
+        showToast('已接受邀請');
+        loadIncomingRequests();
+        loadOutgoingRequests();
+        setTimeout(() => switchFriendTab('list'), 180);
+    } catch (error) {
+        showToast(error.message || '處理邀請失敗');
+    }
+}
+
+async function rejectFriendRequest(fromUserId) {
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        await incomingRequestCollection(me.uid).doc(fromUserId).delete();
+        await outgoingRequestCollection(fromUserId).doc(me.uid).delete();
+        showToast('已拒絕邀請');
+        loadIncomingRequests();
+        loadOutgoingRequests();
+    } catch (error) {
+        showToast(error.message || '處理邀請失敗');
+    }
+}
+
+async function removeFriend(friendId) {
+    if (!confirm('確定要刪除此好友嗎？')) return;
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        await friendCollection(me.uid).doc(friendId).delete();
+        await friendCollection(friendId).doc(me.uid).delete();
+        showToast('已刪除好友');
+        loadFriendsList();
+    } catch (error) {
+        showToast(error.message || '刪除好友失敗');
+    }
+}
+
+async function showFriendProfile(friendId, fallbackName = '好友') {
+    const old = document.getElementById('friend-profile-modal');
+    if (old) old.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'friend-profile-modal';
+    modal.style.cssText = 'position:absolute;inset:0;z-index:320;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;padding:12px;';
+    modal.innerHTML = `
+        <div style="width:min(92vw,360px);max-height:86vh;overflow:auto;background:linear-gradient(180deg,#171d36,#0f1428);border:1px solid rgba(255,215,0,0.2);border-radius:12px;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
+                <div style="color:#ffd166;font-size:14px;font-weight:bold;">${fallbackName} 戰績資料</div>
+                <div style="display:flex;gap:6px;">
+                    <button onclick="quickInviteFriend('${friendId}', '${fallbackName.replace(/'/g, "\\'")}')" style="padding:4px 8px;border:none;border-radius:6px;background:#355cde;color:#fff;">一鍵邀戰</button>
+                    <button onclick="closeFriendProfile()" style="padding:4px 8px;border:none;border-radius:6px;background:#444;color:#fff;">關閉</button>
+                </div>
+            </div>
+            <div id="friend-profile-stat" style="font-size:12px;color:#9ab;margin-bottom:8px;">讀取中...</div>
+            <div id="friend-profile-list" style="font-size:12px;color:#dce3f8;">讀取中...</div>
+        </div>
+    `;
+    document.getElementById('lobby-screen').appendChild(modal);
+
+    try {
+        const snap = await pvpMatchesCollection(friendId).orderBy('ts', 'desc').limit(12).get();
+        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        const statEl = document.getElementById('friend-profile-stat');
+        const listEl = document.getElementById('friend-profile-list');
+        if (!statEl || !listEl) return;
+
+        const total = rows.length;
+        const win = rows.filter(x => x.result === 'win').length;
+        const lose = rows.filter(x => x.result === 'lose').length;
+        const rate = total ? Math.round((win / total) * 100) : 0;
+        statEl.textContent = `近 ${total} 場｜勝 ${win}｜敗 ${lose}｜勝率 ${rate}%`;
+
+        if (!rows.length) {
+            listEl.innerHTML = '<div style="color:#667;">尚無戰績資料</div>';
+            return;
+        }
+
+        listEl.innerHTML = rows.map((r) => {
+            const date = r.ts ? new Date(r.ts) : null;
+            const time = date ? `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : '--';
+            const color = r.result === 'win' ? '#7bed9f' : '#ff7b7b';
+            const badge = r.result === 'win' ? '勝' : '敗';
+            return `<div style="padding:7px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(10,14,28,0.75);margin-bottom:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                    <div>vs ${r.opponentName || '對手'}</div>
+                    <div style="color:${color};font-weight:bold;">${badge}</div>
+                </div>
+                <div style="font-size:11px;color:#9ab;margin-top:3px;">HP ${r.hpSelf ?? '-'} : ${r.hpEnemy ?? '-'} ・ ${time}</div>
+            </div>`;
+        }).join('');
+    } catch (error) {
+        const statEl = document.getElementById('friend-profile-stat');
+        const listEl = document.getElementById('friend-profile-list');
+        if (statEl) statEl.textContent = '讀取失敗';
+        if (listEl) listEl.innerHTML = `<div style="color:#ff7b7b;">${error.message || '無法讀取資料'}</div>`;
+    }
+}
+
+function closeFriendProfile() {
+    const el = document.getElementById('friend-profile-modal');
+    if (el) el.remove();
+}
+
+async function quickInviteFriend(friendId, friendName = '好友') {
+    try {
+        closeFriendProfile();
+        openPvpPanel();
+        await pvpCreateRoom();
+
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) throw new Error('尚未登入');
+
+        const now = Date.now();
+        const expiresAtTs = now + 120000;
+        const payloadToTarget = {
+            fromUid: me.uid,
+            fromName: pvpMyName || playerName || '好友',
+            roomCode: pvpRoomCode,
+            createdAtTs: now,
+            expiresAtTs,
+            status: 'pending',
+        };
+        const payloadToMe = {
+            toUid: friendId,
+            toName: friendName,
+            roomCode: pvpRoomCode,
+            createdAtTs: now,
+            expiresAtTs,
+            status: 'pending',
+        };
+
+        await Promise.all([
+            pvpInviteIncomingCollection(friendId).doc(me.uid).set(payloadToTarget, { merge: true }),
+            pvpInviteOutgoingCollection(me.uid).doc(friendId).set(payloadToMe, { merge: true }),
+        ]);
+
+        setTimeout(() => {
+            const input = document.getElementById('pvp-join-input');
+            if (input) input.placeholder = `等待 ${friendName} 加入房號 ${pvpRoomCode}`;
+            setPvpStatus(`已發送邀戰通知給 ${friendName}，房號：${pvpRoomCode}`);
+            showToast(`已通知 ${friendName} 加入房號 ${pvpRoomCode}`);
+        }, 120);
+    } catch (error) {
+        showToast(error.message || '發送邀戰通知失敗');
+    }
+}
+
+// ===== PVP 系統（Firestore 房間同步版） =====
+let pvpRoomCode = '';
+let pvpMyName = '';
+let pvpEnemyName = '對手';
+let pvpBattleState = null;
+let pvpMyRole = '';
+let pvpRoomUnsub = null;
+let pvpHistoryCache = [];
+let pvpHistoryCursor = null;
+let pvpHistoryFilter = 'all';
+
+function pvpRoomsCollection() {
+    return window.firebaseDb.collection('pvpRooms');
+}
+
+function pvpMatchesCollection(uid) {
+    return window.firebaseDb.collection('users').doc(uid).collection('pvpMatches');
+}
+
+async function areUsersFriends(uidA, uidB) {
+    if (!uidA || !uidB) return false;
+    const snap = await friendCollection(uidA).doc(uidB).get();
+    return snap.exists;
+}
+
+function openPvpPanel() {
+    const old = document.getElementById('pvp-screen');
+    if (old) old.remove();
+
+    pvpMyName = getCurrentPlayerDisplayName();
+
+    let html = '<div id="pvp-screen" style="position:absolute;inset:0;z-index:280;background:rgba(0,0,0,0.94);display:flex;flex-direction:column;">';
+    html += '<div style="padding:14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,215,0,0.12);"><button class="back-btn" onclick="closePvpPanel()">← 返回</button><div style="font-size:16px;font-weight:bold;letter-spacing:3px;color:#ffd700;">PVP（雲端房間）</div><div style="width:50px;"></div></div>';
+    html += '<div id="pvp-status" style="padding:12px;color:#aab;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.08);">建立房間後，朋友輸入房號即可加入</div>';
+    html += '<div id="pvp-room" style="flex:1;overflow:auto;padding:12px;"></div>';
+    html += '</div>';
+
+    document.getElementById('lobby-screen').insertAdjacentHTML('beforeend', html);
+    renderPvpRoom();
+}
+
+async function closePvpPanel() {
+    const el = document.getElementById('pvp-screen');
+    if (el) el.remove();
+
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (me && pvpRoomCode) {
+            const ref = pvpRoomsCollection().doc(pvpRoomCode);
+            const snap = await ref.get();
+            if (snap.exists) {
+                const data = snap.data() || {};
+                if (data.hostUid === me.uid) {
+                    await ref.delete();
+                } else if (data.guestUid === me.uid) {
+                    const battle = data.battleState || pvpBattleState || {};
+                    battle.guestReady = false;
+                    battle.started = false;
+                    battle.turn = 'host';
+                    await ref.set({
+                        guestUid: '',
+                        guestName: '',
+                        status: 'waiting',
+                        battleState: battle,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                }
+            }
+        }
+    } catch (e) {}
+
+    pvpCleanupConnection(true);
+}
+
+function getCurrentPlayerDisplayName() {
+    return (window.playerData && window.playerData.name) || localStorage.getItem('playerName') || '召喚師';
+}
+
+function sendPvpInvite(friendId = '', friendName = '好友') {
+    if (friendId) {
+        quickInviteFriend(friendId, friendName);
+        return;
+    }
+    openPvpPanel();
+    showToast('已開啟 PVP 面板，請建立房間後把房號給好友');
+}
+
+function setPvpStatus(text) {
+    const el = document.getElementById('pvp-status');
+    if (el) el.textContent = text;
+}
+
+function makeRoomCode() {
+    return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function pvpInitBattleState() {
+    pvpBattleState = {
+        hp: { host: 100, guest: 100 },
+        turn: 'host',
+        started: false,
+        winner: null,
+        hostReady: false,
+        guestReady: false,
+        logs: ['房間建立成功，等待雙方準備'],
+    };
+}
+
+function pvpAppendLog(text) {
+    if (!pvpBattleState) return;
+    pvpBattleState.logs = pvpBattleState.logs || [];
+    pvpBattleState.logs.unshift(text);
+    if (pvpBattleState.logs.length > 12) pvpBattleState.logs.length = 12;
+}
+
+function pvpCanAttack() {
+    if (!pvpBattleState || !pvpBattleState.started || pvpBattleState.winner) return false;
+    return pvpBattleState.turn === pvpMyRole;
+}
+
+function pvpCleanupConnection(resetState = true) {
+    if (pvpRoomUnsub) {
+        try { pvpRoomUnsub(); } catch (e) {}
+    }
+    pvpRoomUnsub = null;
+    if (resetState) {
+        pvpRoomCode = '';
+        pvpEnemyName = '對手';
+        pvpBattleState = null;
+        pvpMyRole = '';
+    }
+}
+
+async function pvpCreateRoom() {
+    if (!window.firebaseDb) {
+        setPvpStatus('Firebase 尚未初始化');
+        return;
+    }
+
+    const me = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!me) {
+        showToast('請先登入');
+        return;
+    }
+
+    pvpCleanupConnection(true);
+    pvpMyRole = 'host';
+    pvpRoomCode = makeRoomCode();
+    pvpEnemyName = '對手';
+    pvpInitBattleState();
+
+    await pvpRoomsCollection().doc(pvpRoomCode).set({
+        code: pvpRoomCode,
+        hostUid: me.uid,
+        hostName: pvpMyName,
+        guestUid: '',
+        guestName: '',
+        status: 'waiting',
+        winner: '',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        battleState: pvpBattleState,
+    }, { merge: true });
+
+    pvpSubscribeRoom();
+    setPvpStatus('房間已建立，請把房號給朋友加入');
+    renderPvpRoom();
+}
+
+async function pvpJoinRoom() {
+    if (!window.firebaseDb) {
+        setPvpStatus('Firebase 尚未初始化');
+        return;
+    }
+
+    const me = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!me) {
+        showToast('請先登入');
+        return;
+    }
+
+    const code = (document.getElementById('pvp-join-input')?.value || '').trim().toUpperCase();
+    if (!code) {
+        showToast('請輸入房號');
+        return;
+    }
+
+    const ref = pvpRoomsCollection().doc(code);
+    const snap = await ref.get();
+    if (!snap.exists) {
+        showToast('找不到此房間');
+        return;
+    }
+
+    const data = snap.data() || {};
+    if (data.hostUid === me.uid) {
+        showToast('不能加入自己的房間');
+        return;
+    }
+    if (data.guestUid && data.guestUid !== me.uid) {
+        showToast('房間已滿');
+        return;
+    }
+
+    const isFriend = await areUsersFriends(me.uid, data.hostUid);
+    if (!isFriend) {
+        showToast('僅限好友可加入此房間');
+        return;
+    }
+
+    pvpCleanupConnection(true);
+    pvpMyRole = 'guest';
+    pvpRoomCode = code;
+
+    await ref.set({
+        guestUid: me.uid,
+        guestName: pvpMyName,
+        status: 'ready',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    pvpSubscribeRoom();
+    setPvpStatus('加入房間成功，等待雙方準備');
+    renderPvpRoom();
+}
+
+function pvpSubscribeRoom() {
+    if (!pvpRoomCode) return;
+    if (pvpRoomUnsub) {
+        try { pvpRoomUnsub(); } catch (e) {}
+    }
+
+    pvpRoomUnsub = pvpRoomsCollection().doc(pvpRoomCode).onSnapshot((snap) => {
+        if (!snap.exists) {
+            setPvpStatus('房間已不存在');
+            pvpCleanupConnection(true);
+            renderPvpRoom();
+            return;
+        }
+        const data = snap.data() || {};
+        pvpBattleState = data.battleState || pvpBattleState;
+        pvpEnemyName = pvpMyRole === 'host' ? (data.guestName || '對手') : (data.hostName || '房主');
+
+        if (pvpMyRole === 'host' && !data.guestUid) {
+            setPvpStatus('等待好友加入房間');
+        } else if (pvpMyRole === 'guest' && !data.hostUid) {
+            setPvpStatus('房主已離開，房間已關閉');
+        }
+
+        renderPvpRoom();
+    });
+}
+
+async function pvpUpdateRoom(patch) {
+    if (!pvpRoomCode) return;
+    await pvpRoomsCollection().doc(pvpRoomCode).set({
+        ...patch,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+}
+
+async function pvpReady() {
+    if (!pvpBattleState || pvpBattleState.started || !pvpRoomCode) return;
+
+    if (pvpMyRole === 'host') pvpBattleState.hostReady = true;
+    if (pvpMyRole === 'guest') pvpBattleState.guestReady = true;
+    pvpAppendLog(`${pvpMyName} 已準備`);
+
+    if (pvpBattleState.hostReady && pvpBattleState.guestReady) {
+        pvpBattleState.started = true;
+        pvpBattleState.turn = 'host';
+        pvpAppendLog('雙方已就緒，對戰開始（Host 先攻）');
+        setPvpStatus('對戰開始');
+    }
+
+    await pvpUpdateRoom({ battleState: pvpBattleState, status: 'playing' });
+}
+
+async function pvpAttack() {
+    if (!pvpCanAttack()) return;
+
+    const targetRole = pvpMyRole === 'host' ? 'guest' : 'host';
+    const damage = Math.floor(Math.random() * 18) + 8;
+    pvpBattleState.hp[targetRole] = Math.max(0, pvpBattleState.hp[targetRole] - damage);
+    pvpAppendLog(`${pvpMyName} 攻擊造成 ${damage} 傷害`);
+
+    if (pvpBattleState.hp[targetRole] <= 0) {
+        pvpBattleState.winner = pvpMyRole;
+        pvpAppendLog(`${pvpMyName} 獲勝`);
+        await pvpSaveMatchResult(pvpMyRole);
+    } else {
+        pvpBattleState.turn = targetRole;
+    }
+
+    await pvpUpdateRoom({ battleState: pvpBattleState, winner: pvpBattleState.winner || '' });
+}
+
+async function pvpSaveMatchResult(winnerRole) {
+    try {
+        const ref = pvpRoomsCollection().doc(pvpRoomCode);
+        const snap = await ref.get();
+        if (!snap.exists) return;
+        const room = snap.data() || {};
+        const now = Date.now();
+        const hostUid = room.hostUid;
+        const guestUid = room.guestUid;
+        if (!hostUid || !guestUid) return;
+
+        const hostWin = winnerRole === 'host';
+        const hostRecord = {
+            roomCode: pvpRoomCode,
+            opponentUid: guestUid,
+            opponentName: room.guestName || '對手',
+            result: hostWin ? 'win' : 'lose',
+            hpSelf: pvpBattleState?.hp?.host ?? 0,
+            hpEnemy: pvpBattleState?.hp?.guest ?? 0,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            ts: now,
+        };
+        const guestRecord = {
+            roomCode: pvpRoomCode,
+            opponentUid: hostUid,
+            opponentName: room.hostName || '房主',
+            result: hostWin ? 'lose' : 'win',
+            hpSelf: pvpBattleState?.hp?.guest ?? 0,
+            hpEnemy: pvpBattleState?.hp?.host ?? 0,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            ts: now,
+        };
+
+        await Promise.all([
+            pvpMatchesCollection(hostUid).doc(`${now}-${pvpRoomCode}`).set(hostRecord, { merge: true }),
+            pvpMatchesCollection(guestUid).doc(`${now}-${pvpRoomCode}`).set(guestRecord, { merge: true }),
+        ]);
+    } catch (e) {}
+}
+
+async function pvpResetBattle() {
+    if (!pvpRoomCode) return;
+    if (pvpMyRole !== 'host') {
+        showToast('只有房主可以重置對戰');
+        return;
+    }
+
+    pvpInitBattleState();
+    pvpAppendLog('房主重置了對戰');
+    await pvpUpdateRoom({ battleState: pvpBattleState, status: 'ready', winner: '' });
+}
+
+async function loadPvpMatchHistory(limit = 12, append = false) {
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) return [];
+
+        let q = pvpMatchesCollection(me.uid).orderBy('ts', 'desc').limit(limit);
+        if (append && pvpHistoryCursor) {
+            q = q.startAfter(pvpHistoryCursor);
+        }
+
+        const snap = await q.get();
+        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        if (append) pvpHistoryCache = pvpHistoryCache.concat(rows);
+        else pvpHistoryCache = rows;
+
+        pvpHistoryCursor = snap.docs.length ? snap.docs[snap.docs.length - 1] : pvpHistoryCursor;
+        return pvpHistoryCache;
+    } catch (e) {
+        return [];
+    }
+}
+
+function formatPvpRecord(r) {
+    const date = r.ts ? new Date(r.ts) : null;
+    const time = date ? `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : '--';
+    const color = r.result === 'win' ? '#7bed9f' : '#ff7b7b';
+    const badge = r.result === 'win' ? '勝利' : '敗北';
+    return `<div style="padding:8px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(10,14,28,0.7);margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <div style="font-size:12px;color:#dce3f8;">vs ${r.opponentName || '對手'} <span style="color:#8aa;">(${r.roomCode || '-'})</span></div>
+            <div style="font-size:11px;color:${color};font-weight:bold;">${badge}</div>
+        </div>
+        <div style="font-size:11px;color:#9ab;margin-top:4px;">HP ${r.hpSelf ?? '-'} : ${r.hpEnemy ?? '-'} ・ ${time}</div>
+    </div>`;
+}
+
+function renderPvpHistoryList() {
+    const box = document.getElementById('pvp-history-list');
+    const stat = document.getElementById('pvp-history-stat');
+    const moreBtn = document.getElementById('pvp-history-more-btn');
+    if (!box) return;
+
+    const filtered = pvpHistoryFilter === 'all'
+        ? pvpHistoryCache
+        : pvpHistoryCache.filter(x => x.result === pvpHistoryFilter);
+
+    if (stat) {
+        const total = pvpHistoryCache.length;
+        const win = pvpHistoryCache.filter(x => x.result === 'win').length;
+        const lose = pvpHistoryCache.filter(x => x.result === 'lose').length;
+        const rate = total ? Math.round((win / total) * 100) : 0;
+        stat.textContent = `總場 ${total}｜勝 ${win}｜敗 ${lose}｜勝率 ${rate}%`;
+    }
+
+    if (!filtered.length) {
+        box.innerHTML = '<div style="color:#667;font-size:12px;">此篩選下尚無戰績</div>';
+    } else {
+        box.innerHTML = filtered.slice(0, 30).map(formatPvpRecord).join('');
+    }
+
+    if (moreBtn) {
+        moreBtn.style.display = pvpHistoryCursor ? 'inline-block' : 'none';
+    }
+}
+
+function setPvpHistoryFilter(filter) {
+    pvpHistoryFilter = filter;
+    const allBtn = document.getElementById('pvp-filter-all');
+    const winBtn = document.getElementById('pvp-filter-win');
+    const loseBtn = document.getElementById('pvp-filter-lose');
+    if (allBtn) allBtn.style.opacity = filter === 'all' ? '1' : '0.6';
+    if (winBtn) winBtn.style.opacity = filter === 'win' ? '1' : '0.6';
+    if (loseBtn) loseBtn.style.opacity = filter === 'lose' ? '1' : '0.6';
+    renderPvpHistoryList();
+}
+
+async function showPvpHistory() {
+    const box = document.getElementById('pvp-history-list');
+    if (!box) return;
+    box.innerHTML = '<div style="color:#888;font-size:12px;">讀取戰績中...</div>';
+    pvpHistoryCursor = null;
+    pvpHistoryFilter = 'all';
+    await loadPvpMatchHistory(12, false);
+    setPvpHistoryFilter('all');
+    renderPvpHistoryList();
+}
+
+async function loadMorePvpHistory() {
+    const btn = document.getElementById('pvp-history-more-btn');
+    if (btn) btn.textContent = '載入中...';
+    await loadPvpMatchHistory(12, true);
+    renderPvpHistoryList();
+    if (btn) btn.textContent = '載入更多';
+}
+
+function renderPvpRoom() {
+    const box = document.getElementById('pvp-room');
+    if (!box) return;
+
+    const hostHp = pvpBattleState?.hp?.host ?? '--';
+    const guestHp = pvpBattleState?.hp?.guest ?? '--';
+    const turnLabel = !pvpBattleState?.started
+        ? '等待準備'
+        : (pvpBattleState.turn === 'host' ? '房主回合' : '加入者回合');
+
+    const winnerLabel = pvpBattleState?.winner
+        ? (pvpBattleState.winner === 'host' ? '房主獲勝' : '加入者獲勝')
+        : '尚未分出勝負';
+
+    const logs = (pvpBattleState?.logs || []).map((x) => `<div style="padding:4px 0;border-bottom:1px dashed rgba(255,255,255,0.06);">${x}</div>`).join('') || '<div style="color:#667;">尚無紀錄</div>';
+
+    box.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr;gap:12px;">
+            <div style="padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(18,22,40,0.8);">
+                <div style="font-size:13px;color:#ffd166;margin-bottom:8px;">建立或加入房間</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button onclick="pvpCreateRoom()" style="padding:10px 12px;border:none;border-radius:8px;background:#2e8b57;color:#fff;font-weight:bold;">建立房間</button>
+                    <input id="pvp-join-input" placeholder="輸入房號" style="padding:10px;background:#0d1224;color:#dfe7ff;border:1px solid rgba(255,255,255,0.1);border-radius:6px;min-width:120px;">
+                    <button onclick="pvpJoinRoom()" style="padding:10px 12px;border:none;border-radius:8px;background:#9b59b6;color:#fff;font-weight:bold;">加入房間</button>
+                </div>
+                <div style="font-size:11px;color:#9ab;margin-top:8px;">目前房號：${pvpRoomCode || '--'}</div>
+            </div>
+
+            <div style="padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(18,22,40,0.8);">
+                <div style="font-size:13px;color:#ffd166;margin-bottom:8px;">對戰面板</div>
+                <div style="font-size:12px;color:#dce3f8;line-height:1.8;">
+                    <div>你：${pvpMyName} ${pvpMyRole ? `（${pvpMyRole === 'host' ? '房主' : '加入者'}）` : ''}</div>
+                    <div>對手：${pvpEnemyName}</div>
+                    <div>目前回合：${turnLabel}</div>
+                    <div>勝負：${winnerLabel}</div>
+                    <div>HP（房主 / 加入者）：${hostHp} / ${guestHp}</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                    <button onclick="pvpReady()" ${!pvpRoomCode || (pvpBattleState && pvpBattleState.started) ? 'disabled' : ''} style="padding:8px 10px;border:none;border-radius:6px;background:#16a085;color:#fff;">準備開打</button>
+                    <button onclick="pvpAttack()" ${pvpCanAttack() ? '' : 'disabled'} style="padding:8px 10px;border:none;border-radius:6px;background:${pvpCanAttack() ? '#c0392b' : '#555'};color:#fff;">普通攻擊</button>
+                    <button onclick="pvpResetBattle()" ${!pvpRoomCode ? 'disabled' : ''} style="padding:8px 10px;border:none;border-radius:6px;background:#7f8c8d;color:#fff;">重置對戰</button>
+                    <button onclick="showPvpHistory()" style="padding:8px 10px;border:none;border-radius:6px;background:#3b82f6;color:#fff;">戰績</button>
+                </div>
+                <div style="margin-top:10px;font-size:11px;color:#8ea0c6;max-height:140px;overflow:auto;">${logs}</div>
+            </div>
+
+            <div style="padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(18,22,40,0.8);">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                    <div style="font-size:13px;color:#ffd166;">近期戰績</div>
+                    <div id="pvp-history-stat" style="font-size:11px;color:#9ab;">總場 0｜勝 0｜敗 0｜勝率 0%</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <button id="pvp-filter-all" onclick="setPvpHistoryFilter('all')" style="padding:5px 8px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:11px;">全部</button>
+                    <button id="pvp-filter-win" onclick="setPvpHistoryFilter('win')" style="padding:5px 8px;border:none;border-radius:6px;background:#2e8b57;color:#fff;font-size:11px;opacity:0.6;">勝場</button>
+                    <button id="pvp-filter-lose" onclick="setPvpHistoryFilter('lose')" style="padding:5px 8px;border:none;border-radius:6px;background:#a94442;color:#fff;font-size:11px;opacity:0.6;">敗場</button>
+                </div>
+                <div id="pvp-history-list" style="max-height:220px;overflow:auto;">
+                    ${(pvpHistoryCache && pvpHistoryCache.length) ? pvpHistoryCache.slice(0, 8).map(formatPvpRecord).join('') : '<div style="color:#667;font-size:12px;">按下「戰績」載入紀錄</div>'}
+                </div>
+                <div style="margin-top:8px;">
+                    <button id="pvp-history-more-btn" onclick="loadMorePvpHistory()" style="display:none;padding:7px 10px;border:none;border-radius:6px;background:#556b8a;color:#fff;font-size:11px;">載入更多</button>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 // ===== 張邦勤 NPC =====

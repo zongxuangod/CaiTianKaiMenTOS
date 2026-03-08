@@ -1060,7 +1060,139 @@ function stopParticles() {
     if(particleCtx)particleCtx.clearRect(0,0,particleCanvas.width,particleCanvas.height);
 }
 
-// ===== 登入流程 =====
+// ===== 登入流程（Firebase 前端版） =====
+const LOCAL_SAVE_KEY = 'caitiankm_save_v2';
+let authMode = 'login';
+let firebaseReady = false;
+let authUnsubscribe = null;
+let cloudSaveTimer = null;
+let playerPublicUid = '';
+
+function initFirebaseServices() {
+    try {
+        if (!window.firebase) return false;
+        if (!window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey) return false;
+        if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG);
+        window.firebaseAuth = firebase.auth();
+        window.firebaseDb = firebase.firestore();
+        firebaseReady = true;
+        return true;
+    } catch (e) {
+        console.warn('Firebase 初始化失敗', e);
+        return false;
+    }
+}
+
+function getCurrentUser() {
+    return window.firebaseAuth?.currentUser || null;
+}
+window.getCurrentUser = getCurrentUser;
+
+function getUserSaveDocRef(uid) {
+    return window.firebaseDb.collection('users').doc(uid).collection('save').doc('main');
+}
+
+function getUserProfileDocRef(uid) {
+    return window.firebaseDb.collection('users').doc(uid);
+}
+
+function generatePublicUid() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = 'CTK';
+    for (let i = 0; i < 7; i++) {
+        s += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return s;
+}
+
+async function ensurePublicProfile(user) {
+    if (!firebaseReady || !user) return null;
+    const ref = getUserProfileDocRef(user.uid);
+    const snap = await ref.get();
+    let profile = snap.exists ? (snap.data() || {}) : {};
+    let publicUid = profile.publicUid || '';
+
+    if (!publicUid) {
+        for (let i = 0; i < 6; i++) {
+            const candidate = generatePublicUid();
+            const dup = await window.firebaseDb.collection('users').where('publicUid', '==', candidate).limit(1).get();
+            if (dup.empty) {
+                publicUid = candidate;
+                break;
+            }
+        }
+        if (!publicUid) publicUid = `${generatePublicUid()}${Date.now().toString().slice(-2)}`;
+    }
+
+    const payload = {
+        uid: user.uid,
+        publicUid,
+        nickname: playerName || user.displayName || profile.nickname || user.email?.split('@')[0] || '召喚師',
+        email: user.email || profile.email || '',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    };
+
+    if (!snap.exists) {
+        payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    }
+
+    await ref.set(payload, { merge: true });
+    playerPublicUid = publicUid;
+    return payload;
+}
+
+async function pullCloudSaveToLocal(user) {
+    if (!firebaseReady || !user) return false;
+    try {
+        const doc = await getUserSaveDocRef(user.uid).get();
+        if (!doc.exists) return false;
+        const cloudData = doc.data() || {};
+        if (!cloudData.saveData) return false;
+        localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(cloudData.saveData));
+        if (!playerName) {
+            playerName = cloudData.nickname || user.displayName || user.email || '';
+        }
+        return true;
+    } catch (e) {
+        console.warn('雲端讀檔失敗', e);
+        return false;
+    }
+}
+
+async function pushLocalSaveToCloud(saveData) {
+    const user = getCurrentUser();
+    if (!firebaseReady || !user || !saveData) return;
+    try {
+        await getUserSaveDocRef(user.uid).set({
+            uid: user.uid,
+            email: user.email || '',
+            nickname: playerName || user.displayName || '',
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            saveData,
+        }, { merge: true });
+    } catch (e) {
+        console.warn('雲端存檔失敗', e);
+    }
+}
+
+window.queueCloudSave = function queueCloudSave(saveData) {
+    if (!firebaseReady || !getCurrentUser()) return;
+    if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = setTimeout(() => {
+        pushLocalSaveToCloud(saveData);
+    }, 600);
+};
+
+async function logoutAccount() {
+    try {
+        if (firebaseReady && window.firebaseAuth) {
+            await window.firebaseAuth.signOut();
+        }
+    } catch (e) {}
+    hasSaveData = false;
+    location.reload();
+}
+
 function showLoginMenu() {
     SFX.init(); // 初始化音效（需要用戶互動）
     if (hasSaveData) {
@@ -1080,6 +1212,76 @@ function showLoginMenu() {
     setTimeout(()=>{document.getElementById('login-screen').style.display='none'; initParticles();
         document.getElementById('login-menu').classList.remove('hidden'); setTimeout(()=>overlay.classList.remove('active'),100);},600);
 }
+
+function openAuthDialog(mode) {
+    const check=document.getElementById('agree-check'), warning=document.getElementById('agree-warning');
+    if(!check.checked){warning.textContent='⚠ 請先勾選同意使用者條款'; check.parentElement.style.animation='headShake 0.5s';
+        setTimeout(()=>check.parentElement.style.animation='',500); SFX.play('error'); return;}
+
+    authMode = mode === 'register' ? 'register' : 'login';
+    warning.textContent = '';
+
+    const titleEl = document.getElementById('auth-title');
+    const submitEl = document.getElementById('auth-submit-btn');
+    const nickLabel = document.getElementById('auth-nickname-label');
+    const nickInput = document.getElementById('auth-nickname-input');
+    const warn = document.getElementById('auth-warning');
+
+    titleEl.textContent = authMode === 'register' ? '註冊新帳號' : '帳號登入';
+    submitEl.textContent = authMode === 'register' ? '註冊' : '登入';
+    nickLabel.classList.toggle('hidden', authMode !== 'register');
+    nickInput.classList.toggle('hidden', authMode !== 'register');
+
+    document.getElementById('auth-email-input').value = '';
+    document.getElementById('auth-password-input').value = '';
+    nickInput.value = '';
+    warn.textContent = '';
+
+    document.getElementById('auth-dialog').classList.remove('hidden');
+    setTimeout(() => document.getElementById('auth-email-input').focus(), 150);
+}
+
+function closeAuthDialog() {
+    document.getElementById('auth-dialog').classList.add('hidden');
+}
+
+async function submitAuth() {
+    const email = document.getElementById('auth-email-input').value.trim();
+    const password = document.getElementById('auth-password-input').value;
+    const nickname = document.getElementById('auth-nickname-input').value.trim();
+    const warning = document.getElementById('auth-warning');
+
+    warning.textContent = '';
+
+    if (!firebaseReady && !initFirebaseServices()) {
+        warning.textContent = '⚠ Firebase 尚未設定，請先填入 FIREBASE_CONFIG';
+        SFX.play('error');
+        return;
+    }
+
+    try {
+        let cred;
+        if (authMode === 'register') {
+            if (!nickname) throw new Error('請輸入遊戲暱稱');
+            cred = await window.firebaseAuth.createUserWithEmailAndPassword(email, password);
+            await cred.user.updateProfile({ displayName: nickname });
+            playerName = nickname;
+        } else {
+            cred = await window.firebaseAuth.signInWithEmailAndPassword(email, password);
+            playerName = cred.user.displayName || email.split('@')[0];
+        }
+
+        await ensurePublicProfile(cred.user);
+        await pullCloudSaveToLocal(cred.user);
+        closeAuthDialog();
+        SFX.play('confirm');
+        startGame();
+    } catch (error) {
+        warning.textContent = `⚠ ${error.message}`;
+        SFX.play('error');
+    }
+}
+
 function showNameDialog() {
     const overlay=document.getElementById('transition-overlay'); overlay.classList.add('active');
     setTimeout(()=>{document.getElementById('login-menu').classList.add('hidden'); document.getElementById('name-dialog').classList.remove('hidden');
@@ -1090,6 +1292,9 @@ function hideNameDialog() {
     const overlay=document.getElementById('transition-overlay'); overlay.classList.add('active');
     setTimeout(()=>{document.getElementById('name-dialog').classList.add('hidden'); document.getElementById('login-menu').classList.remove('hidden');
         setTimeout(()=>overlay.classList.remove('active'),100);},500);
+}
+function quickGuestStart() {
+    tryStart();
 }
 function tryStart() {
     const check=document.getElementById('agree-check'), warning=document.getElementById('agree-warning');
@@ -3134,7 +3339,7 @@ function showResult(win) {
 // ===== 頁面載入自動讀檔 =====
 const SAVE_VERSION = 3; // 改版時遞增此數字，強制清檔
 let hasSaveData = false;
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
     // 版本不符 → 強制清除所有存檔
     const savedVer = parseInt(localStorage.getItem('caitiankm_save_version') || '0');
     if (savedVer < SAVE_VERSION) {
@@ -3148,7 +3353,25 @@ window.addEventListener('DOMContentLoaded', () => {
         localStorage.removeItem(SAVE_KEY);
         localStorage.removeItem('caitiankm_prologue_done');
     }
-    if (loadGame() && playerName) {
-        hasSaveData = true;
+
+    const localLoaded = loadGame() && playerName;
+    if (localLoaded) hasSaveData = true;
+
+    if (initFirebaseServices() && window.firebaseAuth) {
+        authUnsubscribe = window.firebaseAuth.onAuthStateChanged(async (user) => {
+            if (!user) return;
+            if (!playerName) playerName = user.displayName || user.email || playerName;
+            await ensurePublicProfile(user);
+            const cloudLoaded = await pullCloudSaveToLocal(user);
+            if (cloudLoaded) {
+                loadGame();
+                hasSaveData = true;
+            } else if (localStorage.getItem(SAVE_KEY)) {
+                try {
+                    const parsed = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+                    pushLocalSaveToCloud(parsed);
+                } catch (e) {}
+            }
+        });
     }
 });

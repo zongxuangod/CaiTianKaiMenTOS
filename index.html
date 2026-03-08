@@ -38,14 +38,14 @@
         <div class="menu-panel">
             <div class="menu-title">開始遊戲</div>
             <div class="menu-subtitle">使用帳戶綁定登入可避免遊戲帳號遺失</div>
-            <button class="menu-btn fb-btn" onclick="alert('Facebook 登入功能開發中')">
-                <span class="btn-icon">f</span> 使用 Facebook 繼續
+            <button class="menu-btn fb-btn" onclick="openAuthDialog('login')">
+                <span class="btn-icon">🔐</span> 帳號登入
             </button>
-            <button class="menu-btn google-btn" onclick="alert('Google 登入功能開發中')">
-                <span class="btn-icon">G</span> 以 Google 帳戶登入
+            <button class="menu-btn google-btn" onclick="openAuthDialog('register')">
+                <span class="btn-icon">🆕</span> 註冊新帳號
             </button>
-            <button class="menu-btn inherit-btn" onclick="alert('帳號繼承功能開發中')">
-                📱 帳號繼承
+            <button class="menu-btn inherit-btn" onclick="quickGuestStart()">
+                📱 訪客模式（本機存檔）
             </button>
             <div class="menu-divider">或不綁定帳號開始遊戲</div>
             <button class="menu-btn start-btn" onclick="tryStart()">
@@ -65,7 +65,30 @@
         </div>
     </div>
 
-    <!-- 輸入名字對話框 -->
+    <!-- 帳號登入 / 註冊 -->
+    <div id="auth-dialog" class="overlay hidden">
+        <div class="dialog-panel">
+            <div class="dialog-corner tl"></div>
+            <div class="dialog-corner tr"></div>
+            <div class="dialog-corner bl"></div>
+            <div class="dialog-corner br"></div>
+            <div class="dialog-title" id="auth-title">帳號登入</div>
+            <div class="dialog-divider"></div>
+            <div class="dialog-label">帳號（Email）</div>
+            <input type="email" id="auth-email-input" class="dialog-input" maxlength="100" placeholder="you@example.com">
+            <div class="dialog-label">密碼</div>
+            <input type="password" id="auth-password-input" class="dialog-input" maxlength="64" placeholder="請輸入密碼">
+            <div class="dialog-label hidden" id="auth-nickname-label">遊戲暱稱（2-12字）</div>
+            <input type="text" id="auth-nickname-input" class="dialog-input hidden" maxlength="12" placeholder="請輸入遊戲暱稱...">
+            <div id="auth-warning" style="color:#ff7b7b;font-size:12px;min-height:18px;text-align:center;margin-top:6px;"></div>
+            <div class="dialog-buttons">
+                <button class="dialog-btn confirm-btn" id="auth-submit-btn" onclick="submitAuth()">登入</button>
+                <button class="dialog-btn cancel-btn" onclick="closeAuthDialog()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 輸入名字對話框（訪客模式使用） -->
     <div id="name-dialog" class="overlay hidden">
         <div class="dialog-panel">
             <div class="dialog-corner tl"></div>
@@ -195,6 +218,10 @@
                 <div class="tower-entry-icon">⚔️</div>
                 <div class="tower-entry-label">冒險</div>
             </div>
+            <div class="tower-entry" style="top:34%;right:10%;" onclick="openPvpPanel()">
+                <div class="tower-entry-icon">🆚</div>
+                <div class="tower-entry-label">PVP</div>
+            </div>
 
 
             <audio id="bangqin-audio" src="角色音檔/張邦勤.mp3" preload="auto"></audio>
@@ -237,6 +264,9 @@
             </button>
             <button class="nav-btn" onclick="showShop()">
                 <span class="nav-icon"><img src="其他圖示/商店圖示.png" alt="商店"></span><span class="nav-label">商店</span>
+            </button>
+            <button class="nav-btn" onclick="openFriendsPanel()">
+                <span class="nav-icon">👥</span><span class="nav-label">好友</span>
             </button>
             <button class="nav-btn" onclick="showSettings()">
                 <span class="nav-icon"><img src="其他圖示/設定圖示.png" alt="設定"></span><span class="nav-label">設定</span>
@@ -581,6 +611,20 @@
     <div id="result-screen"></div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+    // TODO: 請替換成你自己的 Firebase 專案設定
+    window.FIREBASE_CONFIG = {
+        apiKey: "",
+        authDomain: "",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: ""
+    };
+</script>
 <script src="game.js"></script>
 <script src="lobby.js"></script>
 </body>
