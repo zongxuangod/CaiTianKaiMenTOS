@@ -992,6 +992,11 @@ let pvpCurrentStage = 0; // PVP 目前第幾關 (0-2)
 let pvpStagesCleared = 0; // PVP 已通關幾關
 let pvpTotalDamageDealt = 0; // PVP 累積傷害
 let pvpHpPercent = 100; // PVP 結束時剩餘 HP%
+let pvpPaused = false; // PVP 戰鬥暫停（對手中離）
+let pvpPauseTimer = null; // 暫停倒數計時器
+let pvpBattleHeartbeatId = null; // 戰鬥中心跳檢查 interval
+let pvpOpponentDcDeadline = 0; // 對手斷線截止時間戳
+let pvpOpponentDcCount = 0; // 對手中離累計次數
 
 // 技能系統狀態
 let skillCooldowns = []; // 每個隊員的當前CD
@@ -1695,6 +1700,7 @@ function startPvpBattle(enemyList) {
     loadPvpStage();
     startBoardAnimation();
     SFX.startBGM('battle');
+    pvpStartBattleHeartbeat();
 }
 
 function loadPvpStage() {
@@ -1726,6 +1732,8 @@ function loadPvpStage() {
 function pvpFinishBattle(win) {
     pvpStagesCleared = win ? pvpEnemyList.length : pvpCurrentStage;
     pvpHpPercent = Math.max(0, Math.floor((teamHp / teamMaxHp) * 100));
+    pvpStopBattleHeartbeat();
+    pvpResumeBattle();
     stopBoardAnimation();
     SFX.stopBGM();
 
@@ -1759,10 +1767,120 @@ function pvpFinishBattle(win) {
 function pvpReturnToLobby() {
     isPvpBattle = false;
     pvpEnemyList = [];
+    pvpStopBattleHeartbeat();
+    pvpResumeBattle();
     stopBoardAnimation();
     document.getElementById('result-screen').classList.remove('show');
     document.getElementById('battle-screen').style.display = 'none';
     enterLobby();
+}
+
+// ===== PVP 戰鬥中斷線暫停系統 =====
+function pvpStartBattleHeartbeat() {
+    pvpStopBattleHeartbeat();
+    pvpOpponentDcDeadline = 0;
+    pvpOpponentDcCount = 0;
+    pvpPaused = false;
+
+    // 建立暫停 overlay（如果還不存在）
+    if (!document.getElementById('pvp-pause-overlay')) {
+        const overlay = document.createElement('div');
+        overlay.id = 'pvp-pause-overlay';
+        overlay.style.cssText = `
+            display:none; position:absolute; inset:0; z-index:200;
+            background:rgba(0,0,0,0.85); 
+            display:none; align-items:center; justify-content:center;
+            flex-direction:column; gap:12px;
+        `;
+        overlay.innerHTML = `
+            <div style="font-size:20px;font-weight:bold;color:#ffd700;letter-spacing:2px;">⏸ 對手中離</div>
+            <div id="pvp-pause-countdown" style="font-size:36px;font-weight:bold;color:#ff7b7b;">30</div>
+            <div style="font-size:13px;color:#aaa;">等待對手回線中…</div>
+            <div id="pvp-pause-dc-info" style="font-size:11px;color:#888;margin-top:4px;"></div>
+        `;
+        document.getElementById('battle-screen').appendChild(overlay);
+    }
+
+    // 每 2 秒檢查對手心跳
+    pvpBattleHeartbeatId = setInterval(() => {
+        if (!isPvpBattle || !pvpRoomCode || !pvpBattleState) return;
+        const room = pvpLiveRoomData || {};
+        const now = Date.now();
+        const myRole = pvpMyRole;
+        const opRole = myRole === 'host' ? 'guest' : 'host';
+        const opLastSeen = room[opRole + 'LastSeenTs'] || 0;
+        const opOffline = opLastSeen > 0 && (now - opLastSeen > 10000);
+
+        if (opOffline && !pvpPaused) {
+            // 對手剛斷線 → 暫停戰鬥
+            pvpOpponentDcDeadline = now + 30000;
+            pvpPauseBattle();
+        } else if (!opOffline && pvpPaused) {
+            // 對手回線 → 恢復戰鬥
+            pvpOpponentDcCount++;
+            if (pvpOpponentDcCount >= 2) {
+                // 2 次中離 → 對手判負，我方獲勝
+                pvpResumeBattle();
+                pvpFinishBattle(true);
+                if (typeof pvpBattleState !== 'undefined' && pvpBattleState) {
+                    pvpBattleState.winner = myRole;
+                    if (typeof pvpUpdateRoom === 'function') {
+                        pvpUpdateRoom({ battleState: pvpBattleState, winner: myRole });
+                    }
+                }
+                return;
+            }
+            pvpResumeBattle();
+            showFloatingText('對手已回線，繼續戰鬥！', '#7bed9f', 'team');
+        }
+
+        // 暫停中 → 更新倒數
+        if (pvpPaused && pvpOpponentDcDeadline > 0) {
+            const remain = Math.max(0, Math.ceil((pvpOpponentDcDeadline - now) / 1000));
+            const cdEl = document.getElementById('pvp-pause-countdown');
+            if (cdEl) cdEl.textContent = remain;
+            const infoEl = document.getElementById('pvp-pause-dc-info');
+            if (infoEl) infoEl.textContent = `對手中離次數：${pvpOpponentDcCount}/2（達 2 次直接判負）`;
+
+            if (remain <= 0) {
+                // 30 秒到 → 對手判負，我方獲勝
+                pvpResumeBattle();
+                pvpFinishBattle(true);
+                if (typeof pvpBattleState !== 'undefined' && pvpBattleState) {
+                    pvpBattleState.winner = myRole;
+                    if (typeof pvpUpdateRoom === 'function') {
+                        pvpUpdateRoom({ battleState: pvpBattleState, winner: myRole });
+                    }
+                    if (typeof pvpSaveMatchResult === 'function') pvpSaveMatchResult(myRole);
+                    if (typeof pvpFinalizeRatingIfNeeded === 'function') pvpFinalizeRatingIfNeeded(myRole);
+                }
+            }
+        }
+    }, 2000);
+}
+
+function pvpStopBattleHeartbeat() {
+    if (pvpBattleHeartbeatId) {
+        clearInterval(pvpBattleHeartbeatId);
+        pvpBattleHeartbeatId = null;
+    }
+}
+
+function pvpPauseBattle() {
+    pvpPaused = true;
+    const overlay = document.getElementById('pvp-pause-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+    }
+}
+
+function pvpResumeBattle() {
+    pvpPaused = false;
+    pvpOpponentDcDeadline = 0;
+    const overlay = document.getElementById('pvp-pause-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
 }
 
 function restartGame() {
@@ -1770,6 +1888,8 @@ function restartGame() {
     isPvpBattle = false;
     roguelikeEnemies = [];
     pvpEnemyList = [];
+    pvpStopBattleHeartbeat();
+    pvpResumeBattle();
     stopBoardAnimation();
     SFX.stopBGM();
     document.getElementById('result-screen').classList.remove('show');
@@ -2042,7 +2162,7 @@ function getOrbPos(e){const rect=canvas.getBoundingClientRect(); const x=e.clien
 function onTouchStart(e){e.preventDefault(); const t=e.touches[0]; onPointerDown({clientX:t.clientX,clientY:t.clientY});}
 function onTouchMove(e){e.preventDefault(); const t=e.touches[0]; onPointerMove({clientX:t.clientX,clientY:t.clientY});}
 function onPointerDown(e){
-    if(animating)return; const pos=getOrbPos(e);
+    if(animating||pvpPaused)return; const pos=getOrbPos(e);
     if(pos.row<0||pos.row>=ROWS||pos.col<0||pos.col>=COLS)return;
     isDragging=true; dragOrb={row:pos.row,col:pos.col}; dragPath=[{row:pos.row,col:pos.col}]; drawBoard({x:pos.x,y:pos.y});
     SFX.play('tap');
@@ -2829,7 +2949,7 @@ function playEnemyEntrance() {
 let pendingSkillIdx = -1;
 
 function useSkill(idx) {
-    if (animating) return;
+    if (animating||pvpPaused) return;
     if (skillCooldowns[idx] > 0) {
         showToast(`技能冷卻中（剩餘 ${skillCooldowns[idx]} 回合）`);
         return;
