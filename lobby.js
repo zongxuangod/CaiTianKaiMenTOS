@@ -4829,7 +4829,8 @@ async function pvpSaveMatchResult(winnerRole) {
 
 async function pvpResetBattle() {
     if (!pvpRoomCode) return;
-    if (pvpMyRole !== 'host') {
+    // 戰鬥結束後雙方都可以重置；未結束時只有房主可以
+    if (!pvpBattleState?.winner && pvpMyRole !== 'host') {
         showToast('只有房主可以重置對戰');
         return;
     }
@@ -4965,9 +4966,32 @@ function renderPvpRoom() {
     // 判斷是否可以重新加入戰鬥（戰鬥已開始、沒結束、我還沒打完）
     const myResult = pvpMyRole === 'host' ? pvpBattleState?.hostResult : pvpBattleState?.guestResult;
     const canRejoin = pvpRoomCode && pvpBattleState && pvpBattleState.started && !pvpBattleState.winner && !myResult?.finished;
+    // 判斷是否已因中離被判負
+    const iLostByDc = pvpRoomCode && pvpBattleState && pvpBattleState.winner && pvpBattleState.winner !== pvpMyRole;
+    const iWonByDc = pvpRoomCode && pvpBattleState && pvpBattleState.winner && pvpBattleState.winner === pvpMyRole;
+
+    // 判斷中離判負原因
+    let dcResultMsg = '';
+    if (iLostByDc) {
+        const myDcCount = pvpMyRole === 'host' ? (dc.hostCount || 0) : (dc.guestCount || 0);
+        if (myDcCount >= 2) dcResultMsg = '你中離達 2 次，已被判定敗北。';
+        else dcResultMsg = '你斷線超過 30 秒未回線，已被判定敗北。';
+    } else if (iWonByDc) {
+        dcResultMsg = '對手中離，你已獲勝！';
+    }
 
     box.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr;gap:12px;">
+            ${dcResultMsg ? `
+            <div style="padding:16px;border:2px solid ${iWonByDc ? '#7bed9f' : '#ff7b7b'};border-radius:10px;background:${iWonByDc ? 'rgba(123,237,159,0.1)' : 'rgba(255,123,123,0.1)'};text-align:center;">
+                <div style="font-size:18px;font-weight:bold;color:${iWonByDc ? '#7bed9f' : '#ff7b7b'};margin-bottom:8px;">
+                    ${iWonByDc ? '🏆 你獲勝了！' : '💀 對戰結束'}
+                </div>
+                <div style="font-size:13px;color:#dce3f8;margin-bottom:8px;">${dcResultMsg}</div>
+                <div style="font-size:11px;color:#aaa;margin-bottom:12px;">房號：${pvpRoomCode} ・ 對手：${pvpEnemyName} ・ 積分：${pvpMyRating}</div>
+                <button onclick="pvpResetBattle()" style="padding:10px 20px;border:none;border-radius:8px;background:#7f8c8d;color:#fff;font-weight:bold;cursor:pointer;">重置對戰</button>
+            </div>
+            ` : ''}
             ${canRejoin ? `
             <div style="padding:16px;border:2px solid #ffd700;border-radius:10px;background:rgba(255,215,0,0.1);text-align:center;">
                 <div style="font-size:16px;font-weight:bold;color:#ffd700;margin-bottom:8px;">⚠️ 你有一場進行中的對戰！</div>
