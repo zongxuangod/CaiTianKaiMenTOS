@@ -41,15 +41,14 @@ body {
 /* ===== 漩渦閃電 + 震動特效 ===== */
 #vortex-fx {
     position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 40%;
+    top: 3%; left: 20%;
+    width: 60%; height: 22%;
     z-index: 101;
     pointer-events: none;
-    overflow: hidden;
 }
 .vortex-glow {
     position: absolute;
-    top: 5%; left: 10%;
+    top: 10%; left: 10%;
     width: 80%; height: 80%;
     border-radius: 50%;
     background: radial-gradient(circle, rgba(100,200,255,0.5) 0%, rgba(60,140,255,0.2) 40%, rgba(40,100,220,0.08) 60%, transparent 75%);
@@ -63,21 +62,21 @@ body {
     filter: blur(0.5px);
 }
 .vortex-lightning.l1 {
-    top: 30%; left: 10%; width: 80%; height: 3px;
+    top: 35%; left: 5%; width: 90%; height: 3px;
     background: linear-gradient(90deg, transparent 0%, rgba(200,230,255,0.6) 15%, rgba(255,255,255,1) 40%, rgba(200,230,255,1) 60%, rgba(255,255,255,0.8) 80%, transparent 100%);
     box-shadow: 0 0 20px 6px rgba(100,180,255,0.9), 0 0 60px 15px rgba(80,160,255,0.5), 0 0 100px 30px rgba(60,120,255,0.2);
     transform: rotate(-12deg);
     animation: lightningFlash1 2.8s linear infinite;
 }
 .vortex-lightning.l2 {
-    top: 45%; left: 15%; width: 70%; height: 3px;
+    top: 55%; left: 10%; width: 80%; height: 3px;
     background: linear-gradient(90deg, transparent 0%, rgba(180,220,255,0.8) 20%, rgba(255,255,255,1) 50%, rgba(180,220,255,0.7) 75%, transparent 100%);
     box-shadow: 0 0 25px 8px rgba(80,160,255,0.9), 0 0 50px 12px rgba(60,140,255,0.5), 0 0 90px 25px rgba(40,100,255,0.2);
     transform: rotate(18deg);
     animation: lightningFlash2 3.2s linear infinite 0.5s;
 }
 .vortex-lightning.l3 {
-    top: 20%; left: 25%; width: 55%; height: 4px;
+    top: 25%; left: 15%; width: 70%; height: 4px;
     background: linear-gradient(90deg, transparent 0%, rgba(220,240,255,0.9) 25%, rgba(255,255,255,1) 50%, rgba(200,230,255,0.8) 70%, transparent 100%);
     box-shadow: 0 0 30px 10px rgba(120,200,255,1), 0 0 70px 20px rgba(80,160,255,0.6), 0 0 120px 40px rgba(60,120,255,0.3);
     transform: rotate(-30deg);
