@@ -3479,13 +3479,21 @@ function showSettings() {
     }
     html += `</div></div>`;
 
-    // 體力藥水
-    html += `<div style="background:linear-gradient(135deg,rgba(18,22,45,0.95),rgba(12,14,30,0.98));border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px;">`;
-    html += `<div style="font-size:14px;font-weight:bold;color:#eee;letter-spacing:2px;margin-bottom:12px;"><img src="其他圖示/體力圖示.png" style="width:16px;height:16px;vertical-align:middle;"> 道具使用</div>`;
-    html += `<div style="display:flex;align-items:center;gap:12px;">`;
-    html += `<div style="font-size:11px;color:#888;flex:1;">體力藥水（剩餘 ${staminaPotions} 個）<br><span style="font-size:9px;color:#666;">使用後體力回滿</span></div>`;
-    html += `<button onclick="useStaminaPotion();closeSettings();showSettings();" style="padding:8px 16px;background:linear-gradient(180deg,#2a7ab5,#1a5a8a);border:1px solid rgba(100,200,255,0.3);border-radius:6px;color:#e0f0ff;font-size:12px;font-weight:bold;letter-spacing:1px;cursor:pointer;">使用</button>`;
-    html += '</div></div>';
+    // 道具 + 禮物盒（並排）
+    html += `<div style="display:flex;gap:10px;">`;
+    // 體力藥水（縮小）
+    html += `<div style="flex:1;background:linear-gradient(135deg,rgba(18,22,45,0.95),rgba(12,14,30,0.98));border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:12px;">`;
+    html += `<div style="font-size:12px;font-weight:bold;color:#eee;margin-bottom:8px;"><img src="其他圖示/體力圖示.png" style="width:14px;height:14px;vertical-align:middle;"> 道具</div>`;
+    html += `<div style="font-size:10px;color:#888;">體力藥水 ×${staminaPotions}</div>`;
+    html += `<button onclick="useStaminaPotion();closeSettings();showSettings();" style="margin-top:6px;width:100%;padding:6px;background:linear-gradient(180deg,#2a7ab5,#1a5a8a);border:1px solid rgba(100,200,255,0.3);border-radius:6px;color:#e0f0ff;font-size:11px;font-weight:bold;cursor:pointer;">使用</button>`;
+    html += `</div>`;
+    // 禮物盒
+    html += `<div style="flex:1;background:linear-gradient(135deg,rgba(45,22,18,0.95),rgba(30,14,12,0.98));border:1px solid rgba(255,180,50,0.15);border-radius:10px;padding:12px;cursor:pointer;" onclick="closeSettings();showGiftBox();">`;
+    html += `<div style="font-size:12px;font-weight:bold;color:#ffd700;margin-bottom:8px;">🎁 禮物盒</div>`;
+    html += `<div style="font-size:10px;color:#c89b5e;">點擊查看補償獎勵</div>`;
+    html += `<div style="margin-top:6px;width:100%;padding:6px;background:linear-gradient(180deg,#8b6914,#6b4f10);border:1px solid rgba(255,215,0,0.3);border-radius:6px;color:#ffe08a;font-size:11px;font-weight:bold;text-align:center;">查看</div>`;
+    html += `</div>`;
+    html += `</div>`;
 
     // 其他操作
     html += `<div style="background:linear-gradient(135deg,rgba(18,22,45,0.95),rgba(12,14,30,0.98));border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px;">`;
@@ -3504,6 +3512,168 @@ function showSettings() {
 function closeSettings() {
     const el = document.getElementById('settings-screen');
     if (el) el.remove();
+}
+
+// ===== 禮物盒系統（Firebase 獎勵發送） =====
+async function showGiftBox() {
+    SFX.play('pageOpen');
+    const old = document.getElementById('giftbox-screen');
+    if (old) old.remove();
+
+    let html = '<div class="sub-screen" id="giftbox-screen" style="z-index:70;">';
+    html += '<div class="sub-header"><button class="back-btn" onclick="closeSub(\'giftbox-screen\')">← 返回</button><div class="sub-title">🎁 禮物盒</div><div></div></div>';
+    html += '<div style="flex:1;display:flex;flex-direction:column;gap:10px;padding:16px 14px;overflow-y:auto;" id="giftbox-list">';
+    html += '<div style="text-align:center;color:#888;font-size:12px;padding:30px;">載入中...</div>';
+    html += '</div></div>';
+    document.getElementById('game-container').appendChild(document.createRange().createContextualFragment(html));
+
+    await loadGiftBoxItems();
+}
+
+async function loadGiftBoxItems() {
+    const listEl = document.getElementById('giftbox-list');
+    if (!listEl) return;
+
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user || !window.firebaseDb) {
+        listEl.innerHTML = '<div style="text-align:center;color:#ff9a9a;font-size:12px;padding:30px;">需綁定帳號才能領取禮物</div>';
+        return;
+    }
+
+    try {
+        const now = new Date();
+        const snap = await window.firebaseDb.collection('config').doc('rewards').collection('items')
+            .where('enabled', '==', true).get();
+
+        if (snap.empty) {
+            listEl.innerHTML = '<div style="text-align:center;color:#888;font-size:12px;padding:30px;">目前沒有可領取的獎勵</div>';
+            return;
+        }
+
+        // 取得已領取紀錄
+        const claimedSnap = await window.firebaseDb.collection('users').doc(user.uid)
+            .collection('claimedRewards').get();
+        const claimedMap = {};
+        claimedSnap.forEach(d => { claimedMap[d.id] = (d.data() || {}).count || 1; });
+
+        let itemsHtml = '';
+        let hasItems = false;
+
+        snap.forEach(doc => {
+            const r = doc.data();
+            const id = doc.id;
+
+            // 檢查時間範圍
+            if (r.startTime && r.startTime.toDate && r.startTime.toDate() > now) return;
+            if (r.endTime && r.endTime.toDate && r.endTime.toDate() < now) return;
+
+            const maxClaims = r.maxClaims || 1;
+            const claimed = claimedMap[id] || 0;
+            const canClaim = claimed < maxClaims;
+
+            // 組裝獎勵內容文字
+            let rewardLines = [];
+            if (r.gems) rewardLines.push(`<img src="其他圖示/鑽石圖示.png" style="width:14px;height:14px;vertical-align:middle;"> ×${r.gems}`);
+            if (r.gold) rewardLines.push(`<img src="其他圖示/金幣圖示.png" style="width:14px;height:14px;vertical-align:middle;"> ×${r.gold}`);
+            if (r.staminaPotions) rewardLines.push(`<img src="其他圖示/體力圖示.png" style="width:14px;height:14px;vertical-align:middle;"> 藥水 ×${r.staminaPotions}`);
+            if (r.skillBooks) {
+                const sb = r.skillBooks;
+                const names = { fire:'火', water:'水', wood:'木', light:'光', dark:'暗' };
+                Object.keys(sb).forEach(k => {
+                    if (sb[k] > 0) rewardLines.push(`📕 ${names[k]||k}技能書 ×${sb[k]}`);
+                });
+            }
+
+            hasItems = true;
+            itemsHtml += `<div style="background:linear-gradient(135deg,rgba(45,30,15,0.95),rgba(25,15,8,0.98));border:1px solid rgba(255,200,50,${canClaim?'0.25':'0.08'});border-radius:10px;padding:14px;">`;
+            itemsHtml += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">`;
+            itemsHtml += `<div style="font-size:13px;font-weight:bold;color:#ffd700;">${r.title || '獎勵'}</div>`;
+            if (!canClaim) {
+                itemsHtml += `<div style="font-size:10px;color:#666;background:rgba(255,255,255,0.05);padding:3px 8px;border-radius:4px;">已領取</div>`;
+            }
+            itemsHtml += `</div>`;
+            if (r.description) itemsHtml += `<div style="font-size:10px;color:#a08050;margin-bottom:8px;">${r.description}</div>`;
+            itemsHtml += `<div style="font-size:11px;color:#ccc;line-height:1.8;margin-bottom:8px;">${rewardLines.join('　')}</div>`;
+            if (r.endTime && r.endTime.toDate) {
+                const end = r.endTime.toDate();
+                itemsHtml += `<div style="font-size:9px;color:#776040;">截止：${end.getFullYear()}/${end.getMonth()+1}/${end.getDate()} ${end.getHours()}:${String(end.getMinutes()).padStart(2,'0')}</div>`;
+            }
+            if (canClaim) {
+                itemsHtml += `<button onclick="claimGift('${id}')" style="margin-top:8px;width:100%;padding:8px;background:linear-gradient(180deg,#c8960a,#8b6914);border:1px solid rgba(255,215,0,0.4);border-radius:6px;color:#fff;font-size:12px;font-weight:bold;letter-spacing:1px;cursor:pointer;">領取獎勵</button>`;
+            }
+            itemsHtml += `</div>`;
+        });
+
+        if (!hasItems) {
+            listEl.innerHTML = '<div style="text-align:center;color:#888;font-size:12px;padding:30px;">目前沒有可領取的獎勵</div>';
+        } else {
+            listEl.innerHTML = itemsHtml;
+        }
+    } catch (e) {
+        console.warn('禮物盒載入失敗', e);
+        listEl.innerHTML = '<div style="text-align:center;color:#ff9a9a;font-size:12px;padding:30px;">載入失敗，請稍後再試</div>';
+    }
+}
+
+async function claimGift(rewardId) {
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user || !window.firebaseDb) { showToast('需綁定帳號才能領取'); return; }
+
+    try {
+        // 讀取獎勵資料
+        const rewardDoc = await window.firebaseDb.collection('config').doc('rewards')
+            .collection('items').doc(rewardId).get();
+        if (!rewardDoc.exists) { showToast('獎勵不存在'); return; }
+        const r = rewardDoc.data();
+
+        // 檢查是否已領取
+        const claimRef = window.firebaseDb.collection('users').doc(user.uid)
+            .collection('claimedRewards').doc(rewardId);
+        const claimDoc = await claimRef.get();
+        const claimed = claimDoc.exists ? ((claimDoc.data() || {}).count || 1) : 0;
+        const maxClaims = r.maxClaims || 1;
+        if (claimed >= maxClaims) { showToast('已經領取過了'); return; }
+
+        // 發放獎勵
+        if (r.gems) playerGems += r.gems;
+        if (r.gold) playerGold += r.gold;
+        if (r.staminaPotions) staminaPotions += r.staminaPotions;
+        if (r.skillBooks) {
+            const sb = r.skillBooks;
+            Object.keys(sb).forEach(k => {
+                if (skillBooks[k] !== undefined) skillBooks[k] += sb[k];
+            });
+        }
+
+        // 記錄已領取
+        await claimRef.set({
+            count: claimed + 1,
+            claimedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        saveGame();
+        updateResources();
+
+        // 顯示領取結果
+        let msg = '獲得：';
+        if (r.gems) msg += ` 💎×${r.gems}`;
+        if (r.gold) msg += ` 💰×${r.gold}`;
+        if (r.staminaPotions) msg += ` 🧪×${r.staminaPotions}`;
+        if (r.skillBooks) {
+            const names = { fire:'火', water:'水', wood:'木', light:'光', dark:'暗' };
+            Object.keys(r.skillBooks).forEach(k => {
+                if (r.skillBooks[k] > 0) msg += ` 📕${names[k]||k}×${r.skillBooks[k]}`;
+            });
+        }
+        showToast(msg);
+        SFX.play('confirm');
+
+        // 重新載入禮物盒
+        await loadGiftBoxItems();
+    } catch (e) {
+        console.warn('領取失敗', e);
+        showToast('領取失敗，請稍後再試');
+    }
 }
 
 function showBindAccountDialog() {
