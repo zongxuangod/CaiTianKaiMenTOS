@@ -1167,8 +1167,15 @@ async function pullCloudSaveToLocal(user) {
         const doc = await getUserSaveDocRef(user.uid).get();
         if (!doc.exists) return false;
         const cloudData = doc.data() || {};
-        if (!cloudData.saveData) return false;
-        localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(cloudData.saveData));
+        // 支援新格式 saveDataJson（字串）和舊格式 saveData（物件）
+        let saveRaw = null;
+        if (cloudData.saveDataJson) {
+            saveRaw = cloudData.saveDataJson; // 已經是 JSON 字串
+        } else if (cloudData.saveData) {
+            saveRaw = JSON.stringify(cloudData.saveData); // 舊格式轉字串
+        }
+        if (!saveRaw) return false;
+        localStorage.setItem(LOCAL_SAVE_KEY, saveRaw);
         if (!playerName) {
             playerName = cloudData.nickname || user.displayName || user.email || '';
         }
@@ -1188,7 +1195,7 @@ async function pushLocalSaveToCloud(saveData) {
             email: user.email || '',
             nickname: playerName || user.displayName || '',
             updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-            saveData,
+            saveDataJson: JSON.stringify(saveData),
         }, { merge: true });
     } catch (e) {
         console.warn('雲端存檔失敗', e);
