@@ -2084,21 +2084,6 @@ function closeGachaResult() {
     document.getElementById('gacha-result').classList.add('hidden');
 }
 
-// GM 測試用（之後移除）
-function gmCheat() {
-    const key = prompt('輸入 GM Key：');
-    if (key === 'Qqaz78963...') {
-        playerGems = 99999;
-        playerGold = 9999999;
-        skillBooks = { '人': 99, '神': 99, '魔': 99, '龍': 99, '獸': 99 };
-        staminaPotions = 99;
-        updateResources();
-        saveGame();
-        showToast('GM：全資源已灌滿');
-    } else {
-        showToast('Key 錯誤');
-    }
-}
 
 let gachaParticleId = null;
 function drawGachaParticles(isSSR) {
