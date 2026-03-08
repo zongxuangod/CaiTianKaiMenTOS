@@ -3451,8 +3451,9 @@ function showSettings() {
     html += `</div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">`;
     if (!authUser) {
         html += `<button onclick="showBindAccountDialog()" style="padding:8px 14px;background:rgba(123,237,159,0.16);border:1px solid rgba(123,237,159,0.35);border-radius:6px;color:#7bed9f;font-size:12px;font-weight:bold;cursor:pointer;">🔗 綁定帳號</button>`;
+    } else {
+        html += `<button onclick="closeSettings();logoutAccount();" style="padding:8px 14px;background:rgba(255,71,87,0.16);border:1px solid rgba(255,71,87,0.35);border-radius:6px;color:#ff9aa8;font-size:12px;font-weight:bold;cursor:pointer;">登出帳號</button>`;
     }
-    html += `<button onclick="closeSettings();logoutAccount();" style="padding:8px 14px;background:rgba(255,71,87,0.16);border:1px solid rgba(255,71,87,0.35);border-radius:6px;color:#ff9aa8;font-size:12px;font-weight:bold;cursor:pointer;">登出帳號</button>`;
     html += `</div></div>`;
 
     // 體力藥水
