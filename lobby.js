@@ -4306,6 +4306,14 @@ async function pvpTryReconnect() {
     }
 }
 
+function pvpRejoinBattle() {
+    if (!pvpRoomCode || !pvpBattleState || !pvpBattleState.started) {
+        showToast('找不到進行中的對戰');
+        return;
+    }
+    pvpLaunchRealBattle();
+}
+
 async function closePvpPanel() {
     const el = document.getElementById('pvp-screen');
     if (el) el.remove();
@@ -4954,9 +4962,20 @@ function renderPvpRoom() {
     const logs = (pvpBattleState?.logs || []).map((x) => `<div style="padding:4px 0;border-bottom:1px dashed rgba(255,255,255,0.06);">${x}</div>`).join('') || '<div style="color:#667;">尚無紀錄</div>';
 
     const canReady = pvpRoomCode && pvpBattleState && !pvpBattleState.started && pvpLiveRoomData?.guestUid;
+    // 判斷是否可以重新加入戰鬥（戰鬥已開始、沒結束、我還沒打完）
+    const myResult = pvpMyRole === 'host' ? pvpBattleState?.hostResult : pvpBattleState?.guestResult;
+    const canRejoin = pvpRoomCode && pvpBattleState && pvpBattleState.started && !pvpBattleState.winner && !myResult?.finished;
 
     box.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr;gap:12px;">
+            ${canRejoin ? `
+            <div style="padding:16px;border:2px solid #ffd700;border-radius:10px;background:rgba(255,215,0,0.1);text-align:center;">
+                <div style="font-size:16px;font-weight:bold;color:#ffd700;margin-bottom:8px;">⚠️ 你有一場進行中的對戰！</div>
+                <div style="font-size:12px;color:#dce3f8;margin-bottom:12px;">房號：${pvpRoomCode} ・ 對手：${pvpEnemyName}</div>
+                <button onclick="pvpRejoinBattle()" style="padding:12px 28px;border:none;border-radius:8px;background:#e67e22;color:#fff;font-size:16px;font-weight:bold;cursor:pointer;animation:pulse 1.5s infinite;">🔥 重新加入戰鬥</button>
+            </div>
+            ` : ''}
+
             <div style="padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(18,22,40,0.8);">
                 <div style="font-size:13px;color:#ffd166;margin-bottom:8px;">建立或加入房間</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
