@@ -3589,5 +3589,3 @@ window.addEventListener('DOMContentLoaded', async () => {
         });
     }
 });
-
-});
