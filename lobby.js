@@ -3446,7 +3446,12 @@ function showSettings() {
     html += `召喚師等級：<span style="color:#64c8ff;">Lv.${summonerLv}</span><br>`;
     html += `擁有角色數：<span style="color:#7bed9f;">${ownedCards.length}</span><br>`;
     html += `體力藥水：<span style="color:#ff6b9d;"><img src="其他圖示/體力圖示.png" style="width:14px;height:14px;vertical-align:middle;"> ×${staminaPotions}</span>`;
-    html += `</div><div style="margin-top:10px;"><button onclick="closeSettings();logoutAccount();" style="padding:8px 14px;background:rgba(255,71,87,0.16);border:1px solid rgba(255,71,87,0.35);border-radius:6px;color:#ff9aa8;font-size:12px;font-weight:bold;cursor:pointer;">登出帳號</button></div></div>`;
+    html += `</div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">`;
+    if (!authUser) {
+        html += `<button onclick="showBindAccountDialog()" style="padding:8px 14px;background:rgba(123,237,159,0.16);border:1px solid rgba(123,237,159,0.35);border-radius:6px;color:#7bed9f;font-size:12px;font-weight:bold;cursor:pointer;">🔗 綁定帳號</button>`;
+    }
+    html += `<button onclick="closeSettings();logoutAccount();" style="padding:8px 14px;background:rgba(255,71,87,0.16);border:1px solid rgba(255,71,87,0.35);border-radius:6px;color:#ff9aa8;font-size:12px;font-weight:bold;cursor:pointer;">登出帳號</button>`;
+    html += `</div></div>`;
 
     // 體力藥水
     html += `<div style="background:linear-gradient(135deg,rgba(18,22,45,0.95),rgba(12,14,30,0.98));border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:16px;">`;
@@ -3473,6 +3478,68 @@ function showSettings() {
 function closeSettings() {
     const el = document.getElementById('settings-screen');
     if (el) el.remove();
+}
+
+function showBindAccountDialog() {
+    const existing = document.getElementById('bind-account-dialog');
+    if (existing) existing.remove();
+
+    const html = `
+    <div id="bind-account-dialog" style="position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;">
+        <div style="background:linear-gradient(135deg,#1a1e3a,#0d1020);border:1px solid rgba(255,215,0,0.2);border-radius:12px;padding:24px;width:85%;max-width:340px;">
+            <div style="font-size:16px;font-weight:bold;color:#ffd700;text-align:center;margin-bottom:16px;">🔗 綁定帳號</div>
+            <div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:16px;">綁定後可雲端存檔、使用 PVP 等功能</div>
+            <input id="bind-email" type="email" placeholder="Email" style="width:100%;padding:10px;margin-bottom:8px;background:#0d1224;color:#dfe7ff;border:1px solid rgba(255,255,255,0.1);border-radius:6px;box-sizing:border-box;">
+            <input id="bind-password" type="password" placeholder="密碼（至少6位）" style="width:100%;padding:10px;margin-bottom:8px;background:#0d1224;color:#dfe7ff;border:1px solid rgba(255,255,255,0.1);border-radius:6px;box-sizing:border-box;">
+            <div id="bind-warning" style="color:#ff7b7b;font-size:11px;min-height:16px;margin-bottom:8px;"></div>
+            <div style="display:flex;gap:8px;">
+                <button onclick="bindAccountSubmit('register')" style="flex:1;padding:10px;border:none;border-radius:6px;background:#2e8b57;color:#fff;font-weight:bold;cursor:pointer;">註冊綁定</button>
+                <button onclick="bindAccountSubmit('login')" style="flex:1;padding:10px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-weight:bold;cursor:pointer;">登入綁定</button>
+            </div>
+            <button onclick="document.getElementById('bind-account-dialog').remove()" style="width:100%;margin-top:8px;padding:8px;border:none;border-radius:6px;background:rgba(255,255,255,0.08);color:#aaa;cursor:pointer;">取消</button>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function bindAccountSubmit(mode) {
+    const email = document.getElementById('bind-email').value.trim();
+    const password = document.getElementById('bind-password').value;
+    const warning = document.getElementById('bind-warning');
+    warning.textContent = '';
+
+    if (!email || !password) { warning.textContent = '⚠ 請填寫 Email 和密碼'; return; }
+    if (password.length < 6) { warning.textContent = '⚠ 密碼至少 6 位'; return; }
+
+    if (!firebaseReady && typeof initFirebaseServices === 'function' && !initFirebaseServices()) {
+        warning.textContent = '⚠ Firebase 未就緒';
+        return;
+    }
+
+    try {
+        let cred;
+        if (mode === 'register') {
+            cred = await window.firebaseAuth.createUserWithEmailAndPassword(email, password);
+            await cred.user.updateProfile({ displayName: playerName || '召喚師' });
+        } else {
+            cred = await window.firebaseAuth.signInWithEmailAndPassword(email, password);
+        }
+
+        // 綁定成功 → 上傳當前存檔到雲端
+        if (typeof ensurePublicProfile === 'function') await ensurePublicProfile(cred.user);
+        saveGame();
+        if (typeof window.queueCloudSave === 'function') {
+            const raw = localStorage.getItem('caitiankm_save_v2');
+            if (raw) window.queueCloudSave(JSON.parse(raw));
+        }
+
+        document.getElementById('bind-account-dialog').remove();
+        showToast('帳號綁定成功！存檔已上傳雲端');
+        closeSettings();
+        showSettings();
+    } catch (e) {
+        warning.textContent = `⚠ ${e.message}`;
+    }
 }
 
 // ===== 好友系統（Firebase 邀請版） =====
