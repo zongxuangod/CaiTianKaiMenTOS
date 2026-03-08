@@ -1185,16 +1185,23 @@ window.queueCloudSave = function queueCloudSave(saveData) {
 
 async function logoutAccount() {
     try {
+        localStorage.setItem('caitiankm_force_login', '1');
         if (firebaseReady && window.firebaseAuth) {
             await window.firebaseAuth.signOut();
         }
     } catch (e) {}
     hasSaveData = false;
+    playerName = '';
     location.reload();
 }
 
 function showLoginMenu() {
     SFX.init(); // 初始化音效（需要用戶互動）
+    const forceLogin = localStorage.getItem('caitiankm_force_login') === '1';
+    if (forceLogin) {
+        hasSaveData = false;
+        localStorage.removeItem('caitiankm_force_login');
+    }
     if (hasSaveData) {
         // 有存檔：點擊登入畫面後直接進大廳
         const overlay = document.getElementById('transition-overlay');
@@ -3359,7 +3366,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     if (initFirebaseServices() && window.firebaseAuth) {
         authUnsubscribe = window.firebaseAuth.onAuthStateChanged(async (user) => {
-            if (!user) return;
+            if (!user) {
+                if (localStorage.getItem('caitiankm_force_login') === '1') {
+                    hasSaveData = false;
+                }
+                return;
+            }
             if (!playerName) playerName = user.displayName || user.email || playerName;
             await ensurePublicProfile(user);
             const cloudLoaded = await pullCloudSaveToLocal(user);

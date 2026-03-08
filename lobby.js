@@ -4023,6 +4023,25 @@ let pvpRoomUnsub = null;
 let pvpHistoryCache = [];
 let pvpHistoryCursor = null;
 let pvpHistoryFilter = 'all';
+let pvpLiveRoomData = null;
+let pvpHeartbeatTimer = null;
+let pvpDisconnectWatchTimer = null;
+let pvpMyRating = 0;
+
+const PVP_STAGE_TEMPLATES = [
+    { name: '林地狼群', hp: 90, atkMin: 5, atkMax: 11 },
+    { name: '熔岩魔像', hp: 130, atkMin: 8, atkMax: 14 },
+    { name: '深淵龍王', hp: 200, atkMin: 12, atkMax: 22 },
+];
+
+const PVP_RATING_REWARDS = [
+    { score: 100, reward: { gems: 30, gold: 3000 } },
+    { score: 300, reward: { gems: 50, gold: 6000 } },
+    { score: 600, reward: { gems: 80, gold: 12000 } },
+    { score: 900, reward: { gems: 120, gold: 20000 } },
+    { score: 1200, reward: { gems: 180, gold: 32000 } },
+    { score: 1500, reward: { gems: 300, gold: 50000 } },
+];
 
 function pvpRoomsCollection() {
     return window.firebaseDb.collection('pvpRooms');
@@ -4038,7 +4057,146 @@ async function areUsersFriends(uidA, uidB) {
     return snap.exists;
 }
 
+function canUsePvp() {
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user || !user.uid) {
+        showToast('PVP 需綁定帳號後才能使用');
+        return false;
+    }
+    return true;
+}
+
+function clampPvpRating(v) {
+    return Math.max(0, Math.min(1500, Math.floor(v || 0)));
+}
+
+async function pvpGetUserProfile(uid) {
+    const snap = await window.firebaseDb.collection('users').doc(uid).get();
+    return snap.exists ? (snap.data() || {}) : {};
+}
+
+async function pvpGetUserRating(uid) {
+    const p = await pvpGetUserProfile(uid);
+    return clampPvpRating(p.pvpRating || 0);
+}
+
+function pvpCalcDifficultyScale(avgRating) {
+    if (avgRating >= 1200) return 1.8;
+    if (avgRating >= 900) return 1.6;
+    if (avgRating >= 600) return 1.4;
+    if (avgRating >= 300) return 1.2;
+    return 1;
+}
+
+function pvpBuildStagesByScale(scale) {
+    return PVP_STAGE_TEMPLATES.map((x, i) => ({
+        id: i + 1,
+        name: x.name,
+        maxHp: Math.floor(x.hp * scale),
+        hp: Math.floor(x.hp * scale),
+        atkMin: Math.max(1, Math.floor(x.atkMin * scale)),
+        atkMax: Math.max(2, Math.floor(x.atkMax * scale)),
+    }));
+}
+
+function pvpGetCurrentStage() {
+    const idx = (pvpBattleState?.currentStage || 1) - 1;
+    return pvpBattleState?.stages?.[idx] || null;
+}
+
+function pvpTrySettleWinnerByHp() {
+    if (!pvpBattleState || pvpBattleState.winner) return;
+    if ((pvpBattleState.hp?.host || 0) <= 0) pvpBattleState.winner = 'guest';
+    if ((pvpBattleState.hp?.guest || 0) <= 0) pvpBattleState.winner = 'host';
+}
+
+async function pvpApplyRatingAndRewards(uid, oldRating, newRating) {
+    const ref = window.firebaseDb.collection('users').doc(uid);
+    const snap = await ref.get();
+    const profile = snap.exists ? (snap.data() || {}) : {};
+    const claims = profile.pvpRewardClaims || {};
+
+    let addGems = 0;
+    let addGold = 0;
+    const newClaims = { ...claims };
+
+    PVP_RATING_REWARDS.forEach((x) => {
+        const key = String(x.score);
+        if (!newClaims[key] && oldRating < x.score && newRating >= x.score) {
+            newClaims[key] = true;
+            addGems += x.reward.gems || 0;
+            addGold += x.reward.gold || 0;
+        }
+    });
+
+    await ref.set({
+        pvpRating: clampPvpRating(newRating),
+        pvpRewardClaims: newClaims,
+        pvpRewardChest: {
+            gems: (profile.pvpRewardChest?.gems || 0) + addGems,
+            gold: (profile.pvpRewardChest?.gold || 0) + addGold,
+        },
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { addGems, addGold };
+}
+
+async function pvpFinalizeRatingIfNeeded(winnerRole) {
+    if (!pvpBattleState || pvpBattleState.ratingSettled || !pvpRoomCode) return;
+
+    const snap = await pvpRoomsCollection().doc(pvpRoomCode).get();
+    if (!snap.exists) return;
+    const room = snap.data() || {};
+    if (!room.hostUid || !room.guestUid) return;
+
+    const hostOld = clampPvpRating(room.hostRating || 0);
+    const guestOld = clampPvpRating(room.guestRating || 0);
+    const hostWin = winnerRole === 'host';
+
+    const hostNew = clampPvpRating(hostOld + (hostWin ? 30 : -20));
+    const guestNew = clampPvpRating(guestOld + (hostWin ? -20 : 30));
+
+    const [hostReward, guestReward] = await Promise.all([
+        pvpApplyRatingAndRewards(room.hostUid, hostOld, hostNew),
+        pvpApplyRatingAndRewards(room.guestUid, guestOld, guestNew),
+    ]);
+
+    pvpBattleState.ratingSettled = true;
+    pvpAppendLog(`積分結算：房主 ${hostOld}→${hostNew} / 加入者 ${guestOld}→${guestNew}`);
+    await pvpUpdateRoom({
+        battleState: pvpBattleState,
+        hostRating: hostNew,
+        guestRating: guestNew,
+    });
+
+    const me = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (me) {
+        const myDelta = me.uid === room.hostUid
+            ? { old: hostOld, next: hostNew, reward: hostReward }
+            : { old: guestOld, next: guestNew, reward: guestReward };
+        pvpMyRating = myDelta.next;
+        if (myDelta.reward.addGems || myDelta.reward.addGold) {
+            if (typeof playerGems !== 'undefined') playerGems += myDelta.reward.addGems;
+            if (typeof playerGold !== 'undefined') playerGold += myDelta.reward.addGold;
+            if (typeof saveGame === 'function') saveGame();
+            showToast(`積分獎勵：+${myDelta.reward.addGems} 鑽石、+${myDelta.reward.addGold} 金幣`);
+        }
+    }
+}
+
+async function pvpLoadMyRating() {
+    try {
+        const me = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!me) return;
+        pvpMyRating = await pvpGetUserRating(me.uid);
+        renderPvpRoom();
+    } catch (e) {}
+}
+
 function openPvpPanel() {
+    if (!canUsePvp()) return;
+
     const old = document.getElementById('pvp-screen');
     if (old) old.remove();
 
@@ -4052,6 +4210,7 @@ function openPvpPanel() {
 
     document.getElementById('lobby-screen').insertAdjacentHTML('beforeend', html);
     renderPvpRoom();
+    pvpLoadMyRating();
 }
 
 async function closePvpPanel() {
@@ -4092,6 +4251,7 @@ function getCurrentPlayerDisplayName() {
 }
 
 function sendPvpInvite(friendId = '', friendName = '好友') {
+    if (!canUsePvp()) return;
     if (friendId) {
         quickInviteFriend(friendId, friendName);
         return;
@@ -4117,6 +4277,12 @@ function pvpInitBattleState() {
         winner: null,
         hostReady: false,
         guestReady: false,
+        disconnect: {
+            hostCount: 0,
+            guestCount: 0,
+            hostDeadlineTs: 0,
+            guestDeadlineTs: 0,
+        },
         logs: ['房間建立成功，等待雙方準備'],
     };
 }
@@ -4133,17 +4299,107 @@ function pvpCanAttack() {
     return pvpBattleState.turn === pvpMyRole;
 }
 
+function pvpStopRuntimeTimers() {
+    if (pvpHeartbeatTimer) {
+        clearInterval(pvpHeartbeatTimer);
+        pvpHeartbeatTimer = null;
+    }
+    if (pvpDisconnectWatchTimer) {
+        clearInterval(pvpDisconnectWatchTimer);
+        pvpDisconnectWatchTimer = null;
+    }
+}
+
 function pvpCleanupConnection(resetState = true) {
     if (pvpRoomUnsub) {
         try { pvpRoomUnsub(); } catch (e) {}
     }
     pvpRoomUnsub = null;
+    pvpStopRuntimeTimers();
     if (resetState) {
         pvpRoomCode = '';
         pvpEnemyName = '對手';
         pvpBattleState = null;
         pvpMyRole = '';
+        pvpLiveRoomData = null;
     }
+}
+
+function pvpStartRuntimeTimers() {
+    pvpStopRuntimeTimers();
+
+    pvpHeartbeatTimer = setInterval(async () => {
+        if (!pvpRoomCode || !pvpMyRole) return;
+        const key = pvpMyRole === 'host' ? 'hostLastSeenTs' : 'guestLastSeenTs';
+        await pvpUpdateRoom({ [key]: Date.now() });
+    }, 5000);
+
+    pvpDisconnectWatchTimer = setInterval(async () => {
+        if (!pvpRoomCode || !pvpBattleState || pvpBattleState.winner) return;
+        const room = pvpLiveRoomData || {};
+        const now = Date.now();
+        const hostSeen = room.hostLastSeenTs || 0;
+        const guestSeen = room.guestLastSeenTs || 0;
+        const dc = pvpBattleState.disconnect || { hostCount: 0, guestCount: 0, hostDeadlineTs: 0, guestDeadlineTs: 0 };
+        let changed = false;
+
+        const hostOffline = pvpBattleState.started && room.guestUid && hostSeen && (now - hostSeen > 10000);
+        const guestOffline = pvpBattleState.started && room.guestUid && guestSeen && (now - guestSeen > 10000);
+
+        if (hostOffline && !dc.hostDeadlineTs) {
+            dc.hostDeadlineTs = now + 30000;
+            pvpAppendLog('房主斷線，30 秒內未回線將判負');
+            changed = true;
+        }
+        if (guestOffline && !dc.guestDeadlineTs) {
+            dc.guestDeadlineTs = now + 30000;
+            pvpAppendLog('加入者斷線，30 秒內未回線將判負');
+            changed = true;
+        }
+
+        if (!hostOffline && dc.hostDeadlineTs) {
+            dc.hostDeadlineTs = 0;
+            dc.hostCount = (dc.hostCount || 0) + 1;
+            pvpAppendLog(`房主已回線（中離 ${dc.hostCount}/2）`);
+            changed = true;
+            if (dc.hostCount >= 2 && !pvpBattleState.winner) {
+                pvpBattleState.winner = 'guest';
+                pvpAppendLog('房主中離達 2 次，判定加入者獲勝');
+            }
+        }
+        if (!guestOffline && dc.guestDeadlineTs) {
+            dc.guestDeadlineTs = 0;
+            dc.guestCount = (dc.guestCount || 0) + 1;
+            pvpAppendLog(`加入者已回線（中離 ${dc.guestCount}/2）`);
+            changed = true;
+            if (dc.guestCount >= 2 && !pvpBattleState.winner) {
+                pvpBattleState.winner = 'host';
+                pvpAppendLog('加入者中離達 2 次，判定房主獲勝');
+            }
+        }
+
+        if (dc.hostDeadlineTs && now > dc.hostDeadlineTs && !pvpBattleState.winner) {
+            pvpBattleState.winner = 'guest';
+            dc.hostDeadlineTs = 0;
+            pvpAppendLog('房主超過 30 秒未回線，判定加入者獲勝');
+            changed = true;
+        }
+        if (dc.guestDeadlineTs && now > dc.guestDeadlineTs && !pvpBattleState.winner) {
+            pvpBattleState.winner = 'host';
+            dc.guestDeadlineTs = 0;
+            pvpAppendLog('加入者超過 30 秒未回線，判定房主獲勝');
+            changed = true;
+        }
+
+        if (changed) {
+            pvpBattleState.disconnect = dc;
+            if (pvpBattleState.winner) {
+                await pvpSaveMatchResult(pvpBattleState.winner);
+                await pvpFinalizeRatingIfNeeded(pvpBattleState.winner);
+            }
+            await pvpUpdateRoom({ battleState: pvpBattleState, winner: pvpBattleState.winner || '' });
+        }
+    }, 2000);
 }
 
 async function pvpCreateRoom() {
@@ -4164,6 +4420,12 @@ async function pvpCreateRoom() {
     pvpEnemyName = '對手';
     pvpInitBattleState();
 
+    const hostRating = await pvpGetUserRating(me.uid);
+    pvpMyRating = hostRating;
+    const scale = pvpCalcDifficultyScale(hostRating);
+    pvpBattleState.stages = pvpBuildStagesByScale(scale);
+    pvpBattleState.currentStage = 1;
+
     await pvpRoomsCollection().doc(pvpRoomCode).set({
         code: pvpRoomCode,
         hostUid: me.uid,
@@ -4172,11 +4434,16 @@ async function pvpCreateRoom() {
         guestName: '',
         status: 'waiting',
         winner: '',
+        hostRating,
+        guestRating: 0,
+        hostLastSeenTs: Date.now(),
+        guestLastSeenTs: 0,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         battleState: pvpBattleState,
     }, { merge: true });
 
     pvpSubscribeRoom();
+    pvpStartRuntimeTimers();
     setPvpStatus('房間已建立，請把房號給朋友加入');
     renderPvpRoom();
 }
@@ -4226,14 +4493,30 @@ async function pvpJoinRoom() {
     pvpMyRole = 'guest';
     pvpRoomCode = code;
 
+    const guestRating = await pvpGetUserRating(me.uid);
+    pvpMyRating = guestRating;
+    const hostRating = clampPvpRating(data.hostRating || 0);
+    const avgRating = Math.floor((hostRating + guestRating) / 2);
+    const scale = pvpCalcDifficultyScale(avgRating);
+    const stages = pvpBuildStagesByScale(scale);
+
     await ref.set({
         guestUid: me.uid,
         guestName: pvpMyName,
         status: 'ready',
+        guestRating,
+        guestLastSeenTs: Date.now(),
+        battleState: {
+            ...(data.battleState || pvpBattleState || {}),
+            stages,
+            currentStage: 1,
+            ratingSettled: false,
+        },
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
     pvpSubscribeRoom();
+    pvpStartRuntimeTimers();
     setPvpStatus('加入房間成功，等待雙方準備');
     renderPvpRoom();
 }
@@ -4252,6 +4535,7 @@ function pvpSubscribeRoom() {
             return;
         }
         const data = snap.data() || {};
+        pvpLiveRoomData = data;
         pvpBattleState = data.battleState || pvpBattleState;
         pvpEnemyName = pvpMyRole === 'host' ? (data.guestName || '對手') : (data.hostName || '房主');
 
@@ -4294,16 +4578,32 @@ async function pvpAttack() {
     if (!pvpCanAttack()) return;
 
     const targetRole = pvpMyRole === 'host' ? 'guest' : 'host';
-    const damage = Math.floor(Math.random() * 18) + 8;
-    pvpBattleState.hp[targetRole] = Math.max(0, pvpBattleState.hp[targetRole] - damage);
-    pvpAppendLog(`${pvpMyName} 攻擊造成 ${damage} 傷害`);
+    const pvpDamage = Math.floor(Math.random() * 18) + 8;
+    pvpBattleState.hp[targetRole] = Math.max(0, pvpBattleState.hp[targetRole] - pvpDamage);
+    pvpAppendLog(`${pvpMyName} 對對手造成 ${pvpDamage} 傷害`);
 
-    if (pvpBattleState.hp[targetRole] <= 0) {
-        pvpBattleState.winner = pvpMyRole;
-        pvpAppendLog(`${pvpMyName} 獲勝`);
-        await pvpSaveMatchResult(pvpMyRole);
-    } else {
+    const stage = pvpGetCurrentStage();
+    if (stage && !pvpBattleState.winner) {
+        const stageDamage = Math.floor(Math.random() * (stage.atkMax - stage.atkMin + 1)) + stage.atkMin;
+        pvpBattleState.hp[pvpMyRole] = Math.max(0, pvpBattleState.hp[pvpMyRole] - stageDamage);
+        stage.hp = Math.max(0, stage.hp - pvpDamage);
+        pvpAppendLog(`${stage.name} 反擊造成 ${stageDamage} 傷害`);
+        if (stage.hp <= 0) {
+            pvpAppendLog(`已擊破第 ${pvpBattleState.currentStage} 關：${stage.name}`);
+            if (pvpBattleState.currentStage < 3) {
+                pvpBattleState.currentStage += 1;
+                pvpAppendLog(`進入第 ${pvpBattleState.currentStage} 關`);
+            }
+        }
+    }
+
+    pvpTrySettleWinnerByHp();
+    if (!pvpBattleState.winner) {
         pvpBattleState.turn = targetRole;
+    } else {
+        pvpAppendLog(pvpBattleState.winner === 'host' ? '房主獲勝' : '加入者獲勝');
+        await pvpSaveMatchResult(pvpBattleState.winner);
+        await pvpFinalizeRatingIfNeeded(pvpBattleState.winner);
     }
 
     await pvpUpdateRoom({ battleState: pvpBattleState, winner: pvpBattleState.winner || '' });
@@ -4357,6 +4657,12 @@ async function pvpResetBattle() {
     }
 
     pvpInitBattleState();
+    const hostRating = clampPvpRating(pvpLiveRoomData?.hostRating || 0);
+    const guestRating = clampPvpRating(pvpLiveRoomData?.guestRating || 0);
+    const scale = pvpCalcDifficultyScale(Math.floor((hostRating + guestRating) / 2));
+    pvpBattleState.stages = pvpBuildStagesByScale(scale);
+    pvpBattleState.currentStage = 1;
+    pvpBattleState.ratingSettled = false;
     pvpAppendLog('房主重置了對戰');
     await pvpUpdateRoom({ battleState: pvpBattleState, status: 'ready', winner: '' });
 }
@@ -4463,6 +4769,9 @@ function renderPvpRoom() {
 
     const hostHp = pvpBattleState?.hp?.host ?? '--';
     const guestHp = pvpBattleState?.hp?.guest ?? '--';
+    const stage = pvpGetCurrentStage();
+    const stageName = stage?.name || '--';
+    const stageHp = stage ? `${stage.hp}/${stage.maxHp}` : '--';
     const turnLabel = !pvpBattleState?.started
         ? '等待準備'
         : (pvpBattleState.turn === 'host' ? '房主回合' : '加入者回合');
@@ -4470,6 +4779,16 @@ function renderPvpRoom() {
     const winnerLabel = pvpBattleState?.winner
         ? (pvpBattleState.winner === 'host' ? '房主獲勝' : '加入者獲勝')
         : '尚未分出勝負';
+
+    const dc = pvpBattleState?.disconnect || {};
+    const hostDc = dc.hostCount || 0;
+    const guestDc = dc.guestCount || 0;
+    const nowTs = Date.now();
+    const hostRemain = dc.hostDeadlineTs ? Math.max(0, Math.ceil((dc.hostDeadlineTs - nowTs) / 1000)) : 0;
+    const guestRemain = dc.guestDeadlineTs ? Math.max(0, Math.ceil((dc.guestDeadlineTs - nowTs) / 1000)) : 0;
+    const dcAlert = hostRemain > 0
+        ? `房主斷線倒數：${hostRemain}s`
+        : (guestRemain > 0 ? `加入者斷線倒數：${guestRemain}s` : '雙方連線正常');
 
     const logs = (pvpBattleState?.logs || []).map((x) => `<div style="padding:4px 0;border-bottom:1px dashed rgba(255,255,255,0.06);">${x}</div>`).join('') || '<div style="color:#667;">尚無紀錄</div>';
 
@@ -4492,7 +4811,11 @@ function renderPvpRoom() {
                     <div>對手：${pvpEnemyName}</div>
                     <div>目前回合：${turnLabel}</div>
                     <div>勝負：${winnerLabel}</div>
+                    <div>你的積分：${pvpMyRating}</div>
                     <div>HP（房主 / 加入者）：${hostHp} / ${guestHp}</div>
+                    <div>關卡：第 ${pvpBattleState?.currentStage || 1} 關（${stageName}）HP ${stageHp}</div>
+                    <div>中離次數（房主 / 加入者）：${hostDc} / ${guestDc}</div>
+                    <div style="color:#ffd166;">${dcAlert}</div>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
                     <button onclick="pvpReady()" ${!pvpRoomCode || (pvpBattleState && pvpBattleState.started) ? 'disabled' : ''} style="padding:8px 10px;border:none;border-radius:6px;background:#16a085;color:#fff;">準備開打</button>
