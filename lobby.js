@@ -4252,11 +4252,70 @@ function openPvpPanel() {
     document.getElementById('lobby-screen').insertAdjacentHTML('beforeend', html);
     renderPvpRoom();
     pvpLoadMyRating();
+    // 嘗試自動重連到進行中的房間
+    pvpTryReconnect();
+}
+
+async function pvpTryReconnect() {
+    const me = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!me || pvpRoomCode) return; // 已有房間就不重連
+
+    try {
+        // 查詢我是 host 的進行中房間
+        let snap = await pvpRoomsCollection()
+            .where('hostUid', '==', me.uid)
+            .where('status', 'in', ['waiting', 'ready', 'playing'])
+            .limit(1).get();
+
+        if (snap.empty) {
+            // 查詢我是 guest 的進行中房間
+            snap = await pvpRoomsCollection()
+                .where('guestUid', '==', me.uid)
+                .where('status', 'in', ['ready', 'playing'])
+                .limit(1).get();
+        }
+
+        if (snap.empty) return;
+
+        const doc = snap.docs[0];
+        const data = doc.data() || {};
+        pvpRoomCode = doc.id;
+        pvpMyRole = data.hostUid === me.uid ? 'host' : 'guest';
+        pvpEnemyName = pvpMyRole === 'host' ? (data.guestName || '對手') : (data.hostName || '房主');
+        pvpBattleState = data.battleState || null;
+        pvpLiveRoomData = data;
+
+        const myRating = await pvpGetUserRating(me.uid);
+        pvpMyRating = myRating;
+
+        pvpSubscribeRoom();
+        pvpStartRuntimeTimers();
+        setPvpStatus(`已重新連線到房間 ${pvpRoomCode}`);
+        renderPvpRoom();
+
+        // 如果戰鬥已開始且我還沒完成 → 自動進入戰鬥
+        if (pvpBattleState && pvpBattleState.started && !pvpBattleState.winner) {
+            const myResult = pvpMyRole === 'host' ? pvpBattleState.hostResult : pvpBattleState.guestResult;
+            if (!myResult?.finished) {
+                setPvpStatus('重連中…自動進入戰鬥');
+                setTimeout(() => pvpLaunchRealBattle(), 500);
+            }
+        }
+    } catch (e) {
+        console.warn('PVP 重連失敗', e);
+    }
 }
 
 async function closePvpPanel() {
     const el = document.getElementById('pvp-screen');
     if (el) el.remove();
+
+    // 如果戰鬥進行中，不刪除房間（允許重連）
+    const battleInProgress = pvpBattleState && pvpBattleState.started && !pvpBattleState.winner;
+    if (battleInProgress) {
+        // 只關閉面板，保留房間和連線狀態（允許重連）
+        return;
+    }
 
     try {
         const me = window.getCurrentUser ? window.getCurrentUser() : null;
@@ -4271,7 +4330,6 @@ async function closePvpPanel() {
                     const battle = data.battleState || pvpBattleState || {};
                     battle.guestReady = false;
                     battle.started = false;
-                    battle.turn = 'host';
                     await ref.set({
                         guestUid: '',
                         guestName: '',
