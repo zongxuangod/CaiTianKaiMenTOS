@@ -991,7 +991,10 @@ let pvpEnemyList = []; // PVP 3 關敵人列表
 let pvpCurrentStage = 0; // PVP 目前第幾關 (0-2)
 let pvpStagesCleared = 0; // PVP 已通關幾關
 let pvpTotalDamageDealt = 0; // PVP 累積傷害
-let pvpHpPercent = 100; // PVP 結束時剩餘 HP%
+let pvpHpPercent = 100; // PVP 結束時自身剩餘 HP%
+let pvpEnemyHpPercent = 100; // PVP 結束時當前敵人剩餘 HP%
+let pvpTimerInterval = null; // PVP 3 分鐘倒數 interval
+let pvpTimeRemaining = 180; // PVP 剩餘秒數
 let pvpPaused = false; // PVP 戰鬥暫停（對手中離）
 let pvpPauseTimer = null; // 暫停倒數計時器
 let pvpBattleHeartbeatId = null; // 戰鬥中心跳檢查 interval
@@ -1708,6 +1711,7 @@ function startPvpBattle(enemyList) {
     startBoardAnimation();
     SFX.startBGM('battle');
     pvpStartBattleHeartbeat();
+    pvpStartTimer();
 }
 
 function loadPvpStage() {
@@ -1724,7 +1728,9 @@ function loadPvpStage() {
     enemyBuffs = [];
 
     const stageLabel = pvpCurrentStage < 2 ? `野怪 ${pvpCurrentStage + 1}` : 'BOSS';
-    document.getElementById('stage-info').textContent = `PVP 第 ${pvpCurrentStage + 1} 關 (${stageLabel})`;
+    const mm = Math.floor(pvpTimeRemaining / 60);
+    const ss = String(pvpTimeRemaining % 60).padStart(2, '0');
+    document.getElementById('stage-info').textContent = `PVP ${pvpCurrentStage + 1}/3 (${stageLabel}) ⏱${mm}:${ss}`;
     const spriteEl = document.getElementById('enemy-sprite');
     spriteEl.innerHTML = `<img src="${e.img}" alt="${e.name}" class="enemy-img">`;
     document.getElementById('enemy-name').textContent = `【${ELEMENTS[e.element]?.name || ''}】${e.name}`;
@@ -1737,8 +1743,12 @@ function loadPvpStage() {
 }
 
 function pvpFinishBattle(win) {
+    pvpStopTimer();
     pvpStagesCleared = win ? pvpEnemyList.length : pvpCurrentStage;
     pvpHpPercent = Math.max(0, Math.floor((teamHp / teamMaxHp) * 100));
+    pvpEnemyHpPercent = (enemyMaxHp > 0) ? Math.max(0, Math.floor((enemyHp / enemyMaxHp) * 100)) : 100;
+    // 已通關全部的話敵人 HP% 算 0（全打完了）
+    if (win) pvpEnemyHpPercent = 0;
     pvpStopBattleHeartbeat();
     pvpResumeBattle();
     stopBoardAnimation();
@@ -1749,15 +1759,18 @@ function pvpFinishBattle(win) {
     SFX.play(win ? 'victory' : 'defeat');
 
     const stagesText = `${pvpStagesCleared} / ${pvpEnemyList.length}`;
+    const timeUsed = 180 - pvpTimeRemaining;
+    const tmm = Math.floor(timeUsed / 60);
+    const tss = String(timeUsed % 60).padStart(2, '0');
     screen.innerHTML = `
         <div class="result-overlay${win ? '' : ' fail'}">
             <div class="result-header">PVP 戰鬥結果</div>
-            <div class="result-divider">◆ ${win ? '全關卡通過' : '挑戰失敗'} ◆</div>
-            <div class="result-complete${win ? '' : ' fail-text'}">${win ? 'Complete' : 'Failed'}</div>
+            <div class="result-divider">◆ ${win ? '3 分鐘內全數通關！' : '時間到'} ◆</div>
+            <div class="result-complete${win ? '' : ' fail-text'}">${win ? 'Complete' : `${tmm}:${tss}`}</div>
             <div class="result-rewards">
                 <div class="reward-row"><span class="reward-label">通過關卡</span><span class="reward-val">${stagesText}</span></div>
-                <div class="reward-row"><span class="reward-label">剩餘 HP</span><span class="reward-val">${pvpHpPercent}%</span></div>
-                <div class="reward-row"><span class="reward-label">累積傷害</span><span class="reward-val">${pvpTotalDamageDealt.toLocaleString()}</span></div>
+                <div class="reward-row"><span class="reward-label">當前敵人 HP</span><span class="reward-val">${pvpEnemyHpPercent}%</span></div>
+                <div class="reward-row"><span class="reward-label">自身 HP</span><span class="reward-val">${pvpHpPercent}%</span></div>
             </div>
             <div style="color:#aaa;font-size:12px;margin-top:12px;">等待對手完成戰鬥，結算積分中…</div>
             <div class="result-buttons">
@@ -1767,19 +1780,55 @@ function pvpFinishBattle(win) {
 
     // 報告結果到 Firebase
     if (typeof pvpReportBattleResult === 'function') {
-        pvpReportBattleResult(pvpStagesCleared, pvpHpPercent, pvpTotalDamageDealt);
+        pvpReportBattleResult(pvpStagesCleared, pvpEnemyHpPercent, pvpHpPercent);
     }
 }
 
 function pvpReturnToLobby() {
     isPvpBattle = false;
     pvpEnemyList = [];
+    pvpStopTimer();
     pvpStopBattleHeartbeat();
     pvpResumeBattle();
     stopBoardAnimation();
     document.getElementById('result-screen').classList.remove('show');
     document.getElementById('battle-screen').style.display = 'none';
     enterLobby();
+}
+
+// ===== PVP 3 分鐘倒數計時器 =====
+function pvpStartTimer() {
+    pvpStopTimer();
+    pvpTimeRemaining = 180;
+    pvpUpdateTimerUI();
+    pvpTimerInterval = setInterval(() => {
+        if (pvpPaused) return; // 暫停時不扣時間
+        pvpTimeRemaining--;
+        pvpUpdateTimerUI();
+        if (pvpTimeRemaining <= 0) {
+            pvpStopTimer();
+            // 時間到 → 結束戰鬥（未全部通關）
+            pvpFinishBattle(false);
+        }
+    }, 1000);
+}
+
+function pvpStopTimer() {
+    if (pvpTimerInterval) {
+        clearInterval(pvpTimerInterval);
+        pvpTimerInterval = null;
+    }
+}
+
+function pvpUpdateTimerUI() {
+    const mm = Math.floor(pvpTimeRemaining / 60);
+    const ss = String(pvpTimeRemaining % 60).padStart(2, '0');
+    const stageLabel = pvpCurrentStage < 2 ? `野怪 ${pvpCurrentStage + 1}` : 'BOSS';
+    const stageEl = document.getElementById('stage-info');
+    if (stageEl && isPvpBattle) {
+        const color = pvpTimeRemaining <= 30 ? '#ff4444' : (pvpTimeRemaining <= 60 ? '#ffa500' : '#ffd700');
+        stageEl.innerHTML = `PVP ${pvpCurrentStage + 1}/3 (${stageLabel}) <span style="color:${color};font-weight:bold;">⏱${mm}:${ss}</span>`;
+    }
 }
 
 // ===== PVP 戰鬥中斷線暫停系統 =====
@@ -1897,6 +1946,7 @@ function restartGame() {
     isPvpBattle = false;
     roguelikeEnemies = [];
     pvpEnemyList = [];
+    pvpStopTimer();
     pvpStopBattleHeartbeat();
     pvpResumeBattle();
     stopBoardAnimation();

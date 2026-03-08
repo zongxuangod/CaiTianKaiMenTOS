@@ -4714,12 +4714,12 @@ function pvpLaunchRealBattle() {
     startPvpBattle(enemyList);
 }
 
-async function pvpReportBattleResult(stagesCleared, hpPercent, totalDamage) {
+async function pvpReportBattleResult(stagesCleared, enemyHpPercent, selfHpPercent) {
     if (!pvpRoomCode || !pvpMyRole || !pvpBattleState) return;
 
     const resultKey = pvpMyRole === 'host' ? 'hostResult' : 'guestResult';
-    pvpBattleState[resultKey] = { stagesCleared, hpPercent, totalDamage, finished: true };
-    pvpAppendLog(`${pvpMyName} 完成戰鬥：通關 ${stagesCleared}/3，HP ${hpPercent}%`);
+    pvpBattleState[resultKey] = { stagesCleared, enemyHpPercent, selfHpPercent, finished: true };
+    pvpAppendLog(`${pvpMyName} 完成戰鬥：通關 ${stagesCleared}/3，敵HP ${enemyHpPercent}%，自身HP ${selfHpPercent}%`);
 
     await pvpUpdateRoom({ battleState: pvpBattleState });
 
@@ -4734,16 +4734,16 @@ async function pvpCheckBothFinished() {
     if (!hr?.finished || !gr?.finished) return;
     if (pvpBattleState.winner) return;
 
-    // 判定勝負：通關數 > HP% > 總傷害
+    // 判定勝負：關卡進度 > 當前敵人剩餘血量（低者勝）> 自身剩餘血量（高者勝）
     let winnerRole = '';
     if (hr.stagesCleared !== gr.stagesCleared) {
         winnerRole = hr.stagesCleared > gr.stagesCleared ? 'host' : 'guest';
-    } else if (hr.hpPercent !== gr.hpPercent) {
-        winnerRole = hr.hpPercent > gr.hpPercent ? 'host' : 'guest';
-    } else if (hr.totalDamage !== gr.totalDamage) {
-        winnerRole = hr.totalDamage > gr.totalDamage ? 'host' : 'guest';
+    } else if (hr.enemyHpPercent !== gr.enemyHpPercent) {
+        winnerRole = hr.enemyHpPercent < gr.enemyHpPercent ? 'host' : 'guest'; // 敵人血越少越好
+    } else if (hr.selfHpPercent !== gr.selfHpPercent) {
+        winnerRole = hr.selfHpPercent > gr.selfHpPercent ? 'host' : 'guest'; // 自己血越多越好
     } else {
-        winnerRole = 'host'; // 平局房主勝
+        winnerRole = 'host'; // 完全平局房主勝
     }
 
     pvpBattleState.winner = winnerRole;
@@ -4778,13 +4778,13 @@ function pvpShowFinalResult() {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:#ccc;">
                     <div style="text-align:center;"><div style="color:#ffd700;font-weight:bold;margin-bottom:4px;">你</div>
                         <div>通關 ${myResult.stagesCleared || 0}/3</div>
-                        <div>HP ${myResult.hpPercent || 0}%</div>
-                        <div>傷害 ${(myResult.totalDamage || 0).toLocaleString()}</div>
+                        <div>敵人HP ${myResult.enemyHpPercent ?? '-'}%</div>
+                        <div>自身HP ${myResult.selfHpPercent ?? '-'}%</div>
                     </div>
                     <div style="text-align:center;"><div style="color:#64c8ff;font-weight:bold;margin-bottom:4px;">${pvpEnemyName}</div>
                         <div>通關 ${opResult.stagesCleared || 0}/3</div>
-                        <div>HP ${opResult.hpPercent || 0}%</div>
-                        <div>傷害 ${(opResult.totalDamage || 0).toLocaleString()}</div>
+                        <div>敵人HP ${opResult.enemyHpPercent ?? '-'}%</div>
+                        <div>自身HP ${opResult.selfHpPercent ?? '-'}%</div>
                     </div>
                 </div>
                 <div style="text-align:center;margin-top:8px;font-size:11px;color:#aaa;">
@@ -4816,7 +4816,8 @@ async function pvpSaveMatchResult(winnerRole) {
             opponentName: room.guestName || '對手',
             result: hostWin ? 'win' : 'lose',
             stagesCleared: hr.stagesCleared || 0,
-            hpPercent: hr.hpPercent || 0,
+            enemyHpPercent: hr.enemyHpPercent ?? 100,
+            selfHpPercent: hr.selfHpPercent ?? 0,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             ts: now,
         };
@@ -4826,7 +4827,8 @@ async function pvpSaveMatchResult(winnerRole) {
             opponentName: room.hostName || '房主',
             result: hostWin ? 'lose' : 'win',
             stagesCleared: gr.stagesCleared || 0,
-            hpPercent: gr.hpPercent || 0,
+            enemyHpPercent: gr.enemyHpPercent ?? 100,
+            selfHpPercent: gr.selfHpPercent ?? 0,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             ts: now,
         };
@@ -4885,7 +4887,7 @@ function formatPvpRecord(r) {
             <div style="font-size:12px;color:#dce3f8;">vs ${r.opponentName || '對手'} <span style="color:#8aa;">(${r.roomCode || '-'})</span></div>
             <div style="font-size:11px;color:${color};font-weight:bold;">${badge}</div>
         </div>
-        <div style="font-size:11px;color:#9ab;margin-top:4px;">通關 ${r.stagesCleared ?? '-'}/3 · HP ${r.hpPercent ?? '-'}% ・ ${time}</div>
+        <div style="font-size:11px;color:#9ab;margin-top:4px;">通關 ${r.stagesCleared ?? '-'}/3 · 敵HP ${r.enemyHpPercent ?? '-'}% · 自身HP ${r.selfHpPercent ?? '-'}% ・ ${time}</div>
     </div>`;
 }
 
@@ -4954,8 +4956,8 @@ function renderPvpRoom() {
 
     const hr = pvpBattleState?.hostResult;
     const gr = pvpBattleState?.guestResult;
-    const hostStatus = hr?.finished ? `通關 ${hr.stagesCleared}/3 · HP ${hr.hpPercent}%` : (pvpBattleState?.hostReady ? '已準備' : '未準備');
-    const guestStatus = gr?.finished ? `通關 ${gr.stagesCleared}/3 · HP ${gr.hpPercent}%` : (pvpBattleState?.guestReady ? '已準備' : '未準備');
+    const hostStatus = hr?.finished ? `通關 ${hr.stagesCleared}/3 · 敵HP ${hr.enemyHpPercent ?? '-'}% · 自身HP ${hr.selfHpPercent ?? '-'}%` : (pvpBattleState?.hostReady ? '已準備' : '未準備');
+    const guestStatus = gr?.finished ? `通關 ${gr.stagesCleared}/3 · 敵HP ${gr.enemyHpPercent ?? '-'}% · 自身HP ${gr.selfHpPercent ?? '-'}%` : (pvpBattleState?.guestReady ? '已準備' : '未準備');
 
     const winnerLabel = pvpBattleState?.winner
         ? (pvpBattleState.winner === 'host' ? '房主獲勝' : '加入者獲勝')
@@ -5022,7 +5024,7 @@ function renderPvpRoom() {
             </div>
 
             <div style="padding:10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(18,22,40,0.8);">
-                <div style="font-size:13px;color:#ffd166;margin-bottom:8px;">⚔️ 轉珠對戰（3 關卡：2 野怪 + 1 BOSS）</div>
+                <div style="font-size:13px;color:#ffd166;margin-bottom:8px;">⚔️ 轉珠對戰（3 關卡 · 限時 3 分鐘）</div>
                 <div style="font-size:12px;color:#dce3f8;line-height:1.8;">
                     <div>你：${pvpMyName} ${pvpMyRole ? `（${pvpMyRole === 'host' ? '房主' : '加入者'}）` : ''}</div>
                     <div>對手：${pvpEnemyName}</div>
@@ -5038,7 +5040,7 @@ function renderPvpRoom() {
                     <button onclick="pvpResetBattle()" ${!pvpRoomCode ? 'disabled' : ''} style="padding:8px 10px;border:none;border-radius:6px;background:#7f8c8d;color:#fff;">重置對戰</button>
                     <button onclick="showPvpHistory()" style="padding:8px 10px;border:none;border-radius:6px;background:#3b82f6;color:#fff;">戰績</button>
                 </div>
-                <div style="margin-top:8px;font-size:10px;color:#778;">雙方準備後各自進入轉珠戰鬥，打完 3 關後比較通關數與 HP 判定勝負</div>
+                <div style="margin-top:8px;font-size:10px;color:#778;">限時 3 分鐘打 3 關，比較：關卡進度 → 敵人剩餘血量 → 自身剩餘血量</div>
                 <div style="margin-top:10px;font-size:11px;color:#8ea0c6;max-height:140px;overflow:auto;">${logs}</div>
             </div>
 
