@@ -4662,6 +4662,14 @@ function pvpSubscribeRoom() {
             }
         }
 
+        // 對手已全通關且我還在打 → 我直接落敗
+        const opRole = pvpMyRole === 'host' ? 'guestResult' : 'hostResult';
+        const opResult = pvpBattleState[opRole];
+        if (opResult?.finished && opResult.stagesCleared >= 3 && isPvpBattle && !pvpBattleState.winner) {
+            // 對手先過全 3 關，強制結束我的戰鬥
+            if (typeof pvpFinishBattle === 'function') pvpFinishBattle(false);
+        }
+
         // 對手完成戰鬥 → 檢查是否雙方都完成
         if (pvpBattleState.hostResult?.finished && pvpBattleState.guestResult?.finished && !pvpBattleState.winner) {
             pvpCheckBothFinished();
