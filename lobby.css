@@ -2168,3 +2168,33 @@
     border: 1px solid rgba(255,255,255,0.04);
     color: #555;
 }
+
+/* ===== 跑馬燈公告 ===== */
+.lobby-marquee {
+    position: absolute;
+    top: 62px;
+    left: 0; right: 0;
+    height: 28px;
+    background: linear-gradient(90deg, rgba(0,0,0,0.85), rgba(20,10,40,0.85), rgba(0,0,0,0.85));
+    border-top: 1px solid rgba(255,215,0,0.3);
+    border-bottom: 1px solid rgba(255,215,0,0.3);
+    overflow: hidden;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+}
+.lobby-marquee span {
+    display: inline-block;
+    white-space: nowrap;
+    color: #ffd700;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-shadow: 0 0 6px rgba(255,215,0,0.4);
+    animation: marqueeScroll 18s linear infinite;
+    padding-left: 100%;
+}
+@keyframes marqueeScroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}

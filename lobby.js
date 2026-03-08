@@ -631,6 +631,7 @@ function enterLobby() {
     startStaminaCountdown();
     updateBadgeDisplay();
     updateBattleBtn();
+    loadMarqueeAnnouncement();
     SFX.startBGM('lobby');
 }
 
@@ -1225,9 +1226,31 @@ function enterDungeon() {
     startRoguelike();
 }
 
-// ===== PVP =====
-function enterPvP() {
-    showToast('PVP 競技場即將開放，敬請期待！');
+// ===== 跑馬燈公告（Firebase） =====
+async function loadMarqueeAnnouncement() {
+    const el = document.getElementById('marquee-text');
+    const container = document.getElementById('lobby-marquee');
+    if (!el || !container) return;
+
+    // 預設公告
+    let text = '歡迎來到 CaiTianKaiMen！祝你遊戲愉快～';
+
+    try {
+        if (window.firebaseDb) {
+            const doc = await window.firebaseDb.collection('config').doc('announcement').get();
+            if (doc.exists) {
+                const data = doc.data() || {};
+                if (data.text) text = data.text;
+                if (data.enabled === false) {
+                    container.style.display = 'none';
+                    return;
+                }
+            }
+        }
+    } catch (e) {}
+
+    el.textContent = '📢 ' + text;
+    container.style.display = 'flex';
 }
 
 // ===== 每日任務 =====
@@ -1419,9 +1442,9 @@ function showAdventureMenu() {
     html += '<div class="adv-menu-info"><div class="adv-menu-name">輪迴挑戰</div><div class="adv-menu-desc">50層連戰，越深越強！消耗10體力</div></div>';
     html += '<div class="adv-menu-arrow">›</div></div>';
     // PVP
-    html += '<div class="adv-menu-item" onclick="closeSub(\'adventure-menu-screen\');enterPvP()">';
-    html += '<div class="adv-menu-icon">⚔️</div>';
-    html += '<div class="adv-menu-info"><div class="adv-menu-name">PVP競技</div><div class="adv-menu-desc">與其他召喚師一決高下</div></div>';
+    html += '<div class="adv-menu-item" onclick="closeSub(\'adventure-menu-screen\');openPvpPanel()">';
+    html += '<div class="adv-menu-icon">🆚</div>';
+    html += '<div class="adv-menu-info"><div class="adv-menu-name">PVP 競技</div><div class="adv-menu-desc">限時 3 分鐘，與其他召喚師一決高下</div></div>';
     html += '<div class="adv-menu-arrow">›</div></div>';
     html += '</div></div>';
     document.getElementById('game-container').appendChild(document.createRange().createContextualFragment(html));
