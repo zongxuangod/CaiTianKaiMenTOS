@@ -3618,6 +3618,130 @@ function showRoguelikeResult(win) {
             </div>`;
     }
     saveGame();
+    // 檢查 Firebase 通關里程碑獎勵
+    if (win || floorsCleared >= 10) {
+        checkDungeonMilestoneRewards(floorsCleared);
+    }
+}
+
+// ===== 輪迴挑戰 Firebase 里程碑獎勵 =====
+async function checkDungeonMilestoneRewards(floorsCleared) {
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user || !window.firebaseDb) return;
+
+    try {
+        const snap = await window.firebaseDb.collection('config').doc('dungeonRewards')
+            .collection('milestones').where('enabled', '==', true).get();
+        if (snap.empty) return;
+
+        // 已領取紀錄
+        const claimedSnap = await window.firebaseDb.collection('users').doc(user.uid)
+            .collection('claimedDungeonRewards').get();
+        const claimedSet = new Set();
+        claimedSnap.forEach(d => claimedSet.add(d.id));
+
+        // 找出符合且未領取的里程碑
+        const eligible = [];
+        snap.forEach(doc => {
+            const r = doc.data();
+            if (floorsCleared >= (r.floor || 999) && !claimedSet.has(doc.id)) {
+                eligible.push({ id: doc.id, ...r });
+            }
+        });
+
+        if (eligible.length === 0) return;
+
+        // 排序（低層先顯示）
+        eligible.sort((a, b) => (a.floor || 0) - (b.floor || 0));
+
+        // 顯示可領取獎勵彈窗
+        showDungeonRewardPopup(eligible);
+    } catch (e) {
+        console.warn('輪迴獎勵檢查失敗', e);
+    }
+}
+
+function showDungeonRewardPopup(rewards) {
+    const old = document.getElementById('dungeon-reward-popup');
+    if (old) old.remove();
+
+    let listHtml = '';
+    rewards.forEach(r => {
+        let items = [];
+        if (r.gems) items.push(`<img src="其他圖示/鑽石圖示.png" style="width:14px;height:14px;vertical-align:middle;"> ×${r.gems}`);
+        if (r.gold) items.push(`<img src="其他圖示/金幣圖示.png" style="width:14px;height:14px;vertical-align:middle;"> ×${r.gold}`);
+        if (r.staminaPotions) items.push(`<img src="其他圖示/體力圖示.png" style="width:14px;height:14px;vertical-align:middle;"> 藥水 ×${r.staminaPotions}`);
+        if (r.skillBooks) {
+            const names = { fire:'火', water:'水', wood:'木', light:'光', dark:'暗' };
+            Object.keys(r.skillBooks).forEach(k => {
+                if (r.skillBooks[k] > 0) items.push(`📕 ${names[k]||k}技能書 ×${r.skillBooks[k]}`);
+            });
+        }
+
+        listHtml += `<div style="background:rgba(255,200,50,0.08);border:1px solid rgba(255,200,50,0.2);border-radius:8px;padding:10px;margin-bottom:8px;">`;
+        listHtml += `<div style="font-size:12px;font-weight:bold;color:#ffd700;margin-bottom:4px;">${r.title || '第' + r.floor + '層獎勵'}</div>`;
+        listHtml += `<div style="font-size:11px;color:#ccc;line-height:1.8;">${items.join('　')}</div>`;
+        listHtml += `</div>`;
+    });
+
+    const html = `
+    <div id="dungeon-reward-popup" style="position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;" onclick="event.stopPropagation();">
+        <div style="background:linear-gradient(135deg,#2a1a08,#1a1008);border:2px solid rgba(255,215,0,0.3);border-radius:14px;padding:20px;width:85%;max-width:340px;">
+            <div style="font-size:16px;font-weight:bold;color:#ffd700;text-align:center;margin-bottom:4px;">🏆 通關里程碑獎勵</div>
+            <div style="font-size:10px;color:#a08050;text-align:center;margin-bottom:14px;">恭喜達成以下里程碑！</div>
+            <div style="max-height:250px;overflow-y:auto;margin-bottom:14px;">${listHtml}</div>
+            <button onclick="claimAllDungeonRewards()" style="width:100%;padding:10px;background:linear-gradient(180deg,#c8960a,#8b6914);border:1px solid rgba(255,215,0,0.4);border-radius:8px;color:#fff;font-size:14px;font-weight:bold;letter-spacing:2px;cursor:pointer;">全部領取</button>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    // 暫存供領取用
+    window._pendingDungeonRewards = rewards;
+}
+
+async function claimAllDungeonRewards() {
+    const rewards = window._pendingDungeonRewards || [];
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user || !window.firebaseDb || rewards.length === 0) return;
+
+    let totalGems = 0, totalGold = 0, totalPotions = 0;
+
+    try {
+        for (const r of rewards) {
+            if (r.gems) { playerGems += r.gems; totalGems += r.gems; }
+            if (r.gold) { playerGold += r.gold; totalGold += r.gold; }
+            if (r.staminaPotions) { staminaPotions += r.staminaPotions; totalPotions += r.staminaPotions; }
+            if (r.skillBooks) {
+                Object.keys(r.skillBooks).forEach(k => {
+                    if (skillBooks[k] !== undefined) skillBooks[k] += r.skillBooks[k];
+                });
+            }
+
+            // 記錄已領取
+            await window.firebaseDb.collection('users').doc(user.uid)
+                .collection('claimedDungeonRewards').doc(r.id).set({
+                    claimedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    floor: r.floor || 0
+                });
+        }
+
+        saveGame();
+        updateResources();
+
+        let msg = '獲得：';
+        if (totalGems) msg += ` 💎×${totalGems}`;
+        if (totalGold) msg += ` 💰×${totalGold}`;
+        if (totalPotions) msg += ` 🧪×${totalPotions}`;
+        showToast(msg);
+        SFX.play('confirm');
+    } catch (e) {
+        console.warn('領取失敗', e);
+        showToast('領取失敗，請稍後再試');
+    }
+
+    window._pendingDungeonRewards = [];
+    const popup = document.getElementById('dungeon-reward-popup');
+    if (popup) popup.remove();
 }
 
 // ===== 結果畫面 =====
