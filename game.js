@@ -1168,7 +1168,11 @@ async function pullCloudSaveToLocal(user) {
     if (!firebaseReady || !user) return false;
     try {
         const doc = await getUserSaveDocRef(user.uid).get();
-        if (!doc.exists) return false;
+        if (!doc.exists) {
+            // Firestore 無資料 → 清除本地快取
+            localStorage.removeItem(LOCAL_SAVE_KEY);
+            return false;
+        }
         const cloudData = doc.data() || {};
         // 支援新格式 saveDataJson（字串）和舊格式 saveData（物件）
         let saveRaw = null;
@@ -1177,7 +1181,10 @@ async function pullCloudSaveToLocal(user) {
         } else if (cloudData.saveData) {
             saveRaw = JSON.stringify(cloudData.saveData); // 舊格式轉字串
         }
-        if (!saveRaw) return false;
+        if (!saveRaw) {
+            localStorage.removeItem(LOCAL_SAVE_KEY);
+            return false;
+        }
         localStorage.setItem(LOCAL_SAVE_KEY, saveRaw);
         if (!playerName) {
             playerName = cloudData.nickname || user.displayName || user.email || '';
@@ -1309,7 +1316,14 @@ async function submitAuth() {
         }
 
         await ensurePublicProfile(cred.user);
-        await pullCloudSaveToLocal(cred.user);
+        const cloudLoaded = await pullCloudSaveToLocal(cred.user);
+        if (cloudLoaded) {
+            loadGame();
+            hasSaveData = true;
+        } else {
+            // Firestore 無資料 → 視為新玩家
+            hasSaveData = false;
+        }
         closeAuthDialog();
         SFX.play('confirm');
         startGame();
@@ -3742,6 +3756,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         localStorage.removeItem('caitiankm_prologue_done');
     }
 
+    // 先嘗試本地快取（僅供訪客模式使用）
     const localLoaded = loadGame() && playerName;
     if (localLoaded) hasSaveData = true;
 
@@ -3755,15 +3770,17 @@ window.addEventListener('DOMContentLoaded', async () => {
             }
             if (!playerName) playerName = user.displayName || user.email || playerName;
             await ensurePublicProfile(user);
+            // Firestore 為唯一存檔來源：有雲端就載入，沒有雲端就清本地
             const cloudLoaded = await pullCloudSaveToLocal(user);
             if (cloudLoaded) {
                 loadGame();
                 hasSaveData = true;
-            } else if (localStorage.getItem(SAVE_KEY)) {
-                try {
-                    const parsed = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
-                    pushLocalSaveToCloud(parsed);
-                } catch (e) {}
+            } else {
+                // Firestore 無資料 → 清除本地存檔，視為新玩家
+                localStorage.removeItem(SAVE_KEY);
+                localStorage.removeItem('caitiankm_starter_done');
+                localStorage.removeItem('caitiankm_prologue_done');
+                hasSaveData = false;
             }
         });
     }

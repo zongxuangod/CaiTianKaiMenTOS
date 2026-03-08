@@ -147,7 +147,9 @@ function saveGame() {
         skillBooks,
     };
     try {
+        // localStorage 僅作為快取
         localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+        // Firestore 為唯一存檔來源，登入用戶一律存雲端
         if (typeof window.queueCloudSave === 'function') {
             window.queueCloudSave(data);
         }
